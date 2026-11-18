@@ -1,0 +1,8 @@
+nohup: ignoring input
+
+> telegram-bot@1.0.0 start
+> node src/bot.js
+
+◇ injected env (10) from .env
+Starting Telegram bot...
+Authenticated as @Proxy2bshop_bot

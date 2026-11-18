@@ -1,22 +1,22 @@
-const crypto = require("crypto");
+const crypto = require('crypto');
 
 const BASE_URL = process.env.XUI_BASE_URL;
 const API_TOKEN = process.env.XUI_API_TOKEN;
 const SUBSCRIPTION_BASE_URL = process.env.XUI_SUBSCRIPTION_BASE_URL;
 
 if (!BASE_URL || !API_TOKEN || !SUBSCRIPTION_BASE_URL) {
-  throw new Error("Missing 3x-ui environment variables");
+  throw new Error('Missing 3x-ui environment variables');
 }
 
-const baseUrl = BASE_URL.endsWith("/") ? BASE_URL : `${BASE_URL}/`;
+const baseUrl = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
 
 async function request(endpoint, options = {}) {
-  const url = new URL(endpoint.replace(/^\/+/, ""), baseUrl);
+  const url = new URL(endpoint.replace(/^\/+/, ''), baseUrl);
 
   const response = await fetch(url, {
     ...options,
     headers: {
-      Accept: "application/json",
+      Accept: 'application/json',
       ...(options.headers || {}),
       Authorization: `Bearer ${API_TOKEN}`,
     },
@@ -38,16 +38,14 @@ async function request(endpoint, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(
-      `3x-ui HTTP ${response.status}: ${data.msg || "Request failed"}`,
-    );
+    throw new Error(`3x-ui HTTP ${response.status}: ${data.msg || 'Request failed'}`);
   }
 
   return data;
 }
 function assertSuccess(data, operation) {
   if (data.success !== true) {
-    throw new Error(`${operation} failed: ${data.msg || "Unknown error"}`);
+    throw new Error(`${operation} failed: ${data.msg || 'Unknown error'}`);
   }
 
   return data.obj;
@@ -56,7 +54,7 @@ function assertSuccess(data, operation) {
 function parseInboundSettings(inbound) {
   if (!inbound.settings) return {};
 
-  if (typeof inbound.settings === "object") {
+  if (typeof inbound.settings === 'object') {
     return inbound.settings;
   }
 
@@ -68,9 +66,9 @@ function parseInboundSettings(inbound) {
 }
 
 async function getInbounds() {
-  const data = await request("panel/api/inbounds/list");
+  const data = await request('panel/api/inbounds/list');
 
-  return assertSuccess(data, "Get inbounds") || [];
+  return assertSuccess(data, 'Get inbounds') || [];
 }
 
 async function findClient(email) {
@@ -101,15 +99,13 @@ async function getClient(email) {
 async function validateInbound(inboundId) {
   const inbounds = await getInbounds();
 
-  const inbound = inbounds.find(
-    (item) => Number(item.id) === Number(inboundId),
-  );
+  const inbound = inbounds.find((item) => Number(item.id) === Number(inboundId));
 
   if (!inbound) {
     throw new Error(`Inbound ${inboundId} was not found`);
   }
 
-  if (String(inbound.protocol).toLowerCase() !== "vless") {
+  if (String(inbound.protocol).toLowerCase() !== 'vless') {
     throw new Error(`Inbound ${inboundId} is not a VLESS inbound`);
   }
 
@@ -120,15 +116,7 @@ async function validateInbound(inboundId) {
   return inbound;
 }
 
-function buildClient({
-  existing,
-  email,
-  subId,
-  telegramId,
-  durationDays,
-  trafficGb,
-  limitIp,
-}) {
+function buildClient({ existing, email, subId, telegramId, durationDays, trafficGb, limitIp }) {
   const expiryTime = Date.now() + Number(durationDays) * 24 * 60 * 60 * 1000;
 
   const totalGB = Number(trafficGb) * 1024 * 1024 * 1024;
@@ -137,7 +125,7 @@ function buildClient({
     id: existing?.id || crypto.randomUUID(),
     email,
     enable: true,
-    flow: existing?.flow || "",
+    flow: existing?.flow || '',
     limitIp: Number(limitIp),
     totalGB,
     expiryTime,
@@ -148,10 +136,10 @@ function buildClient({
 }
 
 async function addClient(inboundId, client) {
-  const data = await request("panel/api/clients/add", {
-    method: "POST",
+  const data = await request('panel/api/clients/add', {
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       client: {
@@ -170,53 +158,40 @@ async function addClient(inboundId, client) {
     }),
   });
 
-  assertSuccess(data, "Add client");
+  assertSuccess(data, 'Add client');
 
   return client;
 }
 
 async function updateClient(inboundId, client) {
-  const data = await request(
-    `panel/api/clients/update/${encodeURIComponent(client.email)}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email: client.email,
-        totalGB: client.totalGB,
-        expiryTime: client.expiryTime,
-        limitIp: client.limitIp,
-        tgId: Number(client.tgId) || 0,
-        enable: client.enable,
-        comment: client.comment,
-      }),
+  const data = await request(`panel/api/clients/update/${encodeURIComponent(client.email)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
     },
-  );
+    body: JSON.stringify({
+      email: client.email,
+      totalGB: client.totalGB,
+      expiryTime: client.expiryTime,
+      limitIp: client.limitIp,
+      tgId: Number(client.tgId) || 0,
+      enable: client.enable,
+      comment: client.comment,
+    }),
+  });
 
-  assertSuccess(data, "Update client");
+  assertSuccess(data, 'Update client');
 
   return client;
 }
 
 async function createOrUpdateClient(options) {
-  const {
-    email,
-    subId,
-    inboundId,
-    telegramId,
-    durationDays,
-    trafficGb = 0,
-    limitIp = 0,
-  } = options;
+  const { email, subId, inboundId, telegramId, durationDays, trafficGb = 0, limitIp = 0 } = options;
 
   const existing = await findClient(email);
 
   // If the client exists, preserve its original inbound.
-  const targetInboundId = existing
-    ? Number(existing.inboundId)
-    : Number(inboundId);
+  const targetInboundId = existing ? Number(existing.inboundId) : Number(inboundId);
 
   await validateInbound(targetInboundId);
 
@@ -247,27 +222,23 @@ async function createOrUpdateClient(options) {
 // implementation. They must match the API exposed by your panel.
 
 async function getClientLinks(email) {
-  const data = await request(
-    `panel/api/clients/links/${encodeURIComponent(email)}`,
-  );
+  const data = await request(`panel/api/clients/links/${encodeURIComponent(email)}`);
 
-  return assertSuccess(data, "Get client links") || [];
+  return assertSuccess(data, 'Get client links') || [];
 }
 
 async function getSubscriptionLinks(subId) {
-  const data = await request(
-    `panel/api/clients/subLinks/${encodeURIComponent(subId)}`,
-  );
+  const data = await request(`panel/api/clients/subLinks/${encodeURIComponent(subId)}`);
 
-  return assertSuccess(data, "Get subscription links") || [];
+  return assertSuccess(data, 'Get subscription links') || [];
 }
 
 async function provisionClient(options) {
   if (!options.email || !options.inboundId || !options.durationDays) {
-    throw new Error("Missing required client provisioning options");
+    throw new Error('Missing required client provisioning options');
   }
 
-  const subId = options.subId || crypto.randomBytes(12).toString("hex");
+  const subId = options.subId || crypto.randomBytes(12).toString('hex');
 
   const result = await createOrUpdateClient({
     ...options,
@@ -278,29 +249,19 @@ async function provisionClient(options) {
 
   const links = await getClientLinks(options.email);
 
-  let vlessUrl = Array.isArray(links)
-    ? links.find(
-        (link) => typeof link === "string" && link.startsWith("vless://"),
-      )
-    : null;
+  let vlessUrl = Array.isArray(links) ? links.find((link) => typeof link === 'string' && link.startsWith('vless://')) : null;
 
   if (!vlessUrl) {
     const subscriptionLinks = await getSubscriptionLinks(effectiveSubId);
 
-    vlessUrl = Array.isArray(subscriptionLinks)
-      ? subscriptionLinks.find(
-          (link) => typeof link === "string" && link.startsWith("vless://"),
-        )
-      : null;
+    vlessUrl = Array.isArray(subscriptionLinks) ? subscriptionLinks.find((link) => typeof link === 'string' && link.startsWith('vless://')) : null;
   }
 
   if (!vlessUrl) {
-    throw new Error(
-      "Client was saved, but the VLESS link could not be retrieved.",
-    );
+    throw new Error('Client was saved, but the VLESS link could not be retrieved.');
   }
 
-  const subscriptionUrl = `${SUBSCRIPTION_BASE_URL.replace(/\/+$/, "")}/${effectiveSubId}`;
+  const subscriptionUrl = `${SUBSCRIPTION_BASE_URL.replace(/\/+$/, '')}/${effectiveSubId}`;
 
   return {
     email: options.email,

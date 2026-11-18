@@ -1,9 +1,9 @@
-require("dotenv").config();
+require('dotenv').config();
 
-const crypto = require("crypto");
-const { Telegraf, Markup, session } = require("telegraf");
+const crypto = require('crypto');
+const { Telegraf, Markup, session } = require('telegraf');
 
-const products = require("./data/products");
+const products = require('./data/products');
 
 const {
   createOrder,
@@ -20,28 +20,28 @@ const {
   getUserProfiles,
   getDefaultProfile,
   getUserProfile,
-  saveServiceProfile
-} = require("./database/db");
+  saveServiceProfile,
+} = require('./database/db');
 
-const { provisionClient } = require("./services/xui.service");
+const { provisionClient } = require('./services/xui.service');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_ID = Number(process.env.ADMIN_TELEGRAM_ID);
 
 if (!BOT_TOKEN) {
-  throw new Error("BOT_TOKEN is missing");
+  throw new Error('BOT_TOKEN is missing');
 }
 
 if (!Number.isSafeInteger(ADMIN_ID) || ADMIN_ID <= 0) {
-  throw new Error("ADMIN_TELEGRAM_ID is missing or invalid");
+  throw new Error('ADMIN_TELEGRAM_ID is missing or invalid');
 }
 
 const bot = new Telegraf(BOT_TOKEN);
 
 bot.use(
   session({
-    getSessionKey: (ctx) => ctx.from?.id?.toString()
-  })
+    getSessionKey: (ctx) => ctx.from?.id?.toString(),
+  }),
 );
 
 bot.use(async (ctx, next) => {
@@ -54,39 +54,63 @@ bot.use(async (ctx, next) => {
 // --------------------------------------------------
 
 function formatPrice(price) {
-  return `${Number(price).toLocaleString("fa-IR")} تومان`;
+  return `${Number(price).toLocaleString('fa-IR')} تومان`;
 }
 
 function mainMenu() {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("🛒 خرید سرویس VPN", "show_products")],
-    [Markup.button.callback("📦 سفارش‌های من", "my_orders")],
-    [Markup.button.callback("📞 پشتیبانی", "support")]
+    [Markup.button.callback('🛒 خرید سرویس VPN', 'show_products')],
+    [Markup.button.callback('📦 سفارش‌های من', 'my_orders')],
+    [Markup.button.callback('📞 پشتیبانی', 'support')],
   ]);
 }
 
 function getProduct(productId) {
-  return products.find(
-    (product) => product.id === Number(productId)
-  );
+  return products.find((product) => product.id === Number(productId));
 }
 
 function getProductByInbound(inboundId) {
-  return products.find(
-    (product) =>
-      Number(product.inboundId) === Number(inboundId)
-  );
+  return products.find((product) => Number(product.inboundId) === Number(inboundId));
 }
 
 function getUserLimitLabel(limitIp) {
   const labels = {
-    1: "۱ کاربر",
-    2: "۲ کاربر",
-    3: "۳ کاربر",
-    0: "بدون محدودیت"
+    1: '۱ کاربر',
+    2: '۲ کاربر',
+    3: '۳ کاربر',
+    0: 'بدون محدودیت',
   };
 
-  return labels[Number(limitIp)] || "نامشخص";
+  return labels[Number(limitIp)] || 'نامشخص';
+}
+
+// قیمت اضافه بر اساس تعداد کاربران
+function getPriceExtra(limitIp) {
+  const extraPrices = {
+    1: 0,
+    2: 50_000,
+    3: 75_000,
+    0: 120_000,
+  };
+
+  const extra = extraPrices[Number(limitIp)];
+
+  if (extra === undefined) {
+    throw new Error(`Invalid limitIp: ${limitIp}`);
+  }
+
+  return extra;
+}
+
+// محاسبه قیمت نهایی محصول
+function calculateProductPrice(basePrice, limitIp) {
+  const base = Number(basePrice);
+
+  if (!Number.isFinite(base) || base < 0) {
+    throw new Error(`Invalid base price: ${basePrice}`);
+  }
+
+  return base + getPriceExtra(limitIp);
 }
 
 function createUsername() {
@@ -105,13 +129,13 @@ function clearPurchase(ctx) {
 
 function getStatusLabel(status) {
   const labels = {
-    awaiting_payment: "در انتظار پرداخت",
-    payment_review: "در انتظار بررسی رسید",
-    processing: "در حال ساخت سرویس",
-    active: "سرویس فعال",
-    rejected: "رسید رد شده",
-    failed: "خطا در ساخت سرویس",
-    cancelled: "لغوشده"
+    awaiting_payment: 'در انتظار پرداخت',
+    payment_review: 'در انتظار بررسی رسید',
+    processing: 'در حال ساخت سرویس',
+    active: 'سرویس فعال',
+    rejected: 'رسید رد شده',
+    failed: 'خطا در ساخت سرویس',
+    cancelled: 'لغوشده',
   };
 
   return labels[status] || status;
@@ -123,29 +147,27 @@ function getSelectedServerInfo(purchase) {
   if (!product) return null;
 
   if (purchase.profileInboundId) {
-    const oldServerProduct = getProductByInbound(
-      purchase.profileInboundId
-    );
+    const oldServerProduct = getProductByInbound(purchase.profileInboundId);
 
     if (oldServerProduct) {
       return {
         country: oldServerProduct.country,
         countryName: oldServerProduct.countryName,
-        inboundId: Number(purchase.profileInboundId)
+        inboundId: Number(purchase.profileInboundId),
       };
     }
 
     return {
       country: product.country,
       countryName: product.countryName,
-      inboundId: Number(purchase.profileInboundId)
+      inboundId: Number(purchase.profileInboundId),
     };
   }
 
   return {
     country: product.country,
     countryName: product.countryName,
-    inboundId: Number(product.inboundId)
+    inboundId: Number(product.inboundId),
   };
 }
 
@@ -157,37 +179,23 @@ async function showUsernameOptions(ctx) {
   const purchase = ctx.session.purchase;
 
   if (!purchase) {
-    return ctx.reply(
-      "فرایند خرید پیدا نشد. دوباره از منوی اصلی شروع کن."
-    );
+    return ctx.reply('فرایند خرید پیدا نشد. دوباره از منوی اصلی شروع کن.');
   }
 
   const profiles = getUserProfiles(ctx.from.id);
 
-  purchase.step = "choose_username";
+  purchase.step = 'choose_username';
 
   const buttons = [];
 
   if (profiles.length) {
     for (const profile of profiles) {
-      const defaultLabel = profile.is_default
-        ? " ⭐ پیش‌فرض"
-        : "";
+      const defaultLabel = profile.is_default ? ' ⭐ پیش‌فرض' : '';
 
-      buttons.push([
-        Markup.button.callback(
-          `🔄 ${profile.xui_email}${defaultLabel}`,
-          `profile_use_${profile.xui_email}`
-        )
-      ]);
+      buttons.push([Markup.button.callback(`🔄 ${profile.xui_email}${defaultLabel}`, `profile_use_${profile.xui_email}`)]);
     }
 
-    buttons.push([
-      Markup.button.callback(
-        "➕ ساخت Username جدید",
-        "username_new"
-      )
-    ]);
+    buttons.push([Markup.button.callback('➕ ساخت Username جدید', 'username_new')]);
 
     await ctx.reply(
       `👤 انتخاب Username سرویس\n\n` +
@@ -197,37 +205,21 @@ async function showUsernameOptions(ctx) {
         `🆕 ساخت Username جدید:\n` +
         `یک سرویس مستقل با لینک جدید ساخته می‌شود.\n\n` +
         `Username موردنظر را انتخاب کن:`,
-      Markup.inlineKeyboard(buttons)
+      Markup.inlineKeyboard(buttons),
     );
 
     return;
   }
 
-  buttons.push([
-    Markup.button.callback(
-      "🎲 ساخت خودکار UUID",
-      "username_auto"
-    )
-  ]);
+  buttons.push([Markup.button.callback('🎲 ساخت خودکار UUID', 'username_auto')]);
 
-  buttons.push([
-    Markup.button.callback(
-      "✏️ انتخاب Username دلخواه",
-      "username_custom"
-    )
-  ]);
+  buttons.push([Markup.button.callback('✏️ انتخاب Username دلخواه', 'username_custom')]);
 
-  buttons.push([
-    Markup.button.callback(
-      " لغو خرید",
-      "cancel_purchase"
-    )
-  ]);
+  buttons.push([Markup.button.callback(' لغو خرید', 'cancel_purchase')]);
 
   await ctx.reply(
-    `👤 برای سرویس جدید Username انتخاب کن.\n\n` +
-      `می‌توانی Username دلخواه وارد کنی یا اجازه بدهی یک UUID به‌صورت خودکار ساخته شود.`,
-    Markup.inlineKeyboard(buttons)
+    `👤 برای سرویس جدید Username انتخاب کن.\n\n` + `می‌توانی Username دلخواه وارد کنی یا اجازه بدهی یک UUID به‌صورت خودکار ساخته شود.`,
+    Markup.inlineKeyboard(buttons),
   );
 }
 
@@ -235,39 +227,19 @@ async function showNewUsernameOptions(ctx) {
   const purchase = ctx.session.purchase;
 
   if (!purchase) {
-    return ctx.reply("فرایند خرید پیدا نشد.");
+    return ctx.reply('فرایند خرید پیدا نشد.');
   }
 
-  purchase.step = "new_username";
+  purchase.step = 'new_username';
 
   await ctx.reply(
-    "برای سرویس جدید Username انتخاب کن:",
+    'برای سرویس جدید Username انتخاب کن:',
     Markup.inlineKeyboard([
-      [
-        Markup.button.callback(
-          "🎲 ساخت خودکار UUID",
-          "username_auto"
-        )
-      ],
-      [
-        Markup.button.callback(
-          "✏️ انتخاب Username دلخواه",
-          "username_custom"
-        )
-      ],
-      [
-        Markup.button.callback(
-          "🔙 بازگشت به Usernameهای قبلی",
-          "username_back"
-        )
-      ],
-      [
-        Markup.button.callback(
-          " لغو خرید",
-          "cancel_purchase"
-        )
-      ]
-    ])
+      [Markup.button.callback('🎲 ساخت خودکار UUID', 'username_auto')],
+      [Markup.button.callback('✏️ انتخاب Username دلخواه', 'username_custom')],
+      [Markup.button.callback('🔙 بازگشت به Usernameهای قبلی', 'username_back')],
+      [Markup.button.callback(' لغو خرید', 'cancel_purchase')],
+    ]),
   );
 }
 
@@ -279,9 +251,7 @@ async function showInvoice(ctx) {
   const purchase = ctx.session.purchase;
 
   if (!purchase) {
-    return ctx.reply(
-      "اطلاعات خرید پیدا نشد. لطفاً دوباره شروع کن."
-    );
+    return ctx.reply('اطلاعات خرید پیدا نشد. لطفاً دوباره شروع کن.');
   }
 
   const product = getProduct(purchase.productId);
@@ -289,22 +259,22 @@ async function showInvoice(ctx) {
   if (!product) {
     clearPurchase(ctx);
 
-    return ctx.reply(
-      "سرویس انتخاب‌شده دیگر وجود ندارد."
-    );
+    return ctx.reply('سرویس انتخاب‌شده دیگر وجود ندارد.');
   }
 
   const server = getSelectedServerInfo(purchase);
 
   if (!server) {
-    return ctx.reply("اطلاعات سرور پیدا نشد.");
+    return ctx.reply('اطلاعات سرور پیدا نشد.');
   }
 
-  purchase.step = "confirm";
+  purchase.step = 'confirm';
 
-  const usernameType = purchase.profileInboundId
-    ? "استفاده از Username قبلی"
-    : "ساخت سرویس جدید";
+  const extraPrice = getPriceExtra(purchase.limitIp);
+
+  const finalPrice = calculateProductPrice(product.price, purchase.limitIp);
+
+  const usernameType = purchase.profileInboundId ? 'استفاده از Username قبلی' : 'ساخت سرویس جدید';
 
   await ctx.reply(
     `🧾 پیش‌فاکتور خرید VPN\n\n` +
@@ -314,29 +284,16 @@ async function showInvoice(ctx) {
       `👥 تعداد کاربران: ${getUserLimitLabel(purchase.limitIp)}\n` +
       `👤 Username: ${purchase.username}\n` +
       `🔧 نوع خرید: ${usernameType}\n\n` +
-      `💰 مبلغ قابل پرداخت: ${formatPrice(product.price)}\n\n` +
+      `💵 قیمت پایه: ${formatPrice(product.price)}\n` +
+      `👥 هزینه تعداد کاربران: ${formatPrice(extraPrice)}\n` +
+      `💰 مبلغ قابل پرداخت: ${formatPrice(finalPrice)}\n\n` +
       `توجه: با فعال‌سازی خرید روی Username قبلی، حجم و اعتبار قبلی حذف و سرویس جدید جایگزین می‌شود.\n\n` +
       `اطلاعات را بررسی و سفارش را ثبت کن.`,
     Markup.inlineKeyboard([
-      [
-        Markup.button.callback(
-          " تأیید و ثبت سفارش",
-          "confirm_order"
-        )
-      ],
-      [
-        Markup.button.callback(
-          "🔄 تغییر Username",
-          "change_username"
-        )
-      ],
-      [
-        Markup.button.callback(
-          " لغو خرید",
-          "cancel_purchase"
-        )
-      ]
-    ])
+      [Markup.button.callback(' تأیید و ثبت سفارش', 'confirm_order')],
+      [Markup.button.callback('🔄 تغییر Username', 'change_username')],
+      [Markup.button.callback(' لغو خرید', 'cancel_purchase')],
+    ]),
   );
 }
 
@@ -349,15 +306,13 @@ async function sendPaymentInvoice(ctx, order) {
   const cardOwner = process.env.PAYMENT_CARD_OWNER;
 
   if (!cardNumber || !cardOwner) {
-    throw new Error(
-      "PAYMENT_CARD_NUMBER or PAYMENT_CARD_OWNER is missing"
-    );
+    throw new Error('PAYMENT_CARD_NUMBER or PAYMENT_CARD_OWNER is missing');
   }
 
   const product = getProduct(order.product_id);
 
   if (!product) {
-    throw new Error("Product not found");
+    throw new Error('Product not found');
   }
 
   await ctx.reply(
@@ -365,21 +320,14 @@ async function sendPaymentInvoice(ctx, order) {
       `شماره سفارش: ${order.id}\n` +
       `کشور سرویس: ${order.country || product.countryName}\n` +
       `مدت: ${order.duration_months} ماه\n` +
-      `حجم: ${order.unlimited ? "نامحدود" : `${order.traffic_gb} گیگابایت`}\n` +
+      `حجم: ${order.unlimited ? 'نامحدود' : `${order.traffic_gb} گیگابایت`}\n` +
       `تعداد کاربران: ${getUserLimitLabel(order.limit_ip)}\n` +
       `Username: ${order.xui_email}\n\n` +
       `مبلغ قابل پرداخت: ${formatPrice(order.price)}\n\n` +
       `شماره کارت:\n${cardNumber}\n\n` +
       `به نام:\n${cardOwner}\n\n` +
       `پس از واریز، تصویر رسید را به‌صورت عکس در همین گفتگو ارسال کن.`,
-    Markup.inlineKeyboard([
-      [
-        Markup.button.callback(
-          " لغو سفارش",
-          `cancel_order_${order.id}`
-        )
-      ]
-    ])
+    Markup.inlineKeyboard([[Markup.button.callback(' لغو سفارش', `cancel_order_${order.id}`)]]),
   );
 }
 
@@ -387,17 +335,12 @@ async function sendPaymentInvoice(ctx, order) {
 // Copyable links
 // --------------------------------------------------
 
-async function sendCopyableLink(
-  chatId,
-  title,
-  url,
-  buttonText
-) {
-  if (!url || typeof url !== "string") {
+async function sendCopyableLink(chatId, title, url, buttonText) {
+  if (!url || typeof url !== 'string') {
     throw new Error(`${title} is empty or invalid`);
   }
 
-  await bot.telegram.callApi("sendMessage", {
+  await bot.telegram.callApi('sendMessage', {
     chat_id: chatId,
     text: `${title}\n${url}`,
     reply_markup: {
@@ -406,12 +349,12 @@ async function sendCopyableLink(
           {
             text: buttonText,
             copy_text: {
-              text: url
-            }
-          }
-        ]
-      ]
-    }
+              text: url,
+            },
+          },
+        ],
+      ],
+    },
   });
 }
 
@@ -423,57 +366,46 @@ async function createAndDeliverService(orderId, adminCtx) {
   let order = getOrder(orderId);
 
   if (!order) {
-    throw new Error("Order not found");
+    throw new Error('Order not found');
   }
 
-  if (order.payment_status !== "paid") {
-    throw new Error("Payment is not approved");
+  if (order.payment_status !== 'paid') {
+    throw new Error('Payment is not approved');
   }
 
-  if (order.provision_status === "completed") {
-    return adminCtx.reply(
-      `سرویس سفارش ${orderId} قبلاً ساخته شده است.`
-    );
+  if (order.provision_status === 'completed') {
+    return adminCtx.reply(`سرویس سفارش ${orderId} قبلاً ساخته شده است.`);
   }
 
   if (!claimProvision(orderId)) {
-    return adminCtx.reply(
-      `سفارش ${orderId} در حال پردازش است یا وضعیت آن اجازه ساخت مجدد نمی‌دهد.`
-    );
+    return adminCtx.reply(`سفارش ${orderId} در حال پردازش است یا وضعیت آن اجازه ساخت مجدد نمی‌دهد.`);
   }
 
   try {
     const product = getProduct(order.product_id);
 
     if (!product) {
-      throw new Error("Product not found");
+      throw new Error('Product not found');
     }
 
-    const inboundId = Number(
-      order.inbound_id || product.inboundId
-    );
+    const inboundId = Number(order.inbound_id || product.inboundId);
 
     if (!Number.isInteger(inboundId) || inboundId <= 0) {
-      throw new Error("Invalid inboundId");
+      throw new Error('Invalid inboundId');
     }
 
     // Keep the same subId on retries.
-    const subId =
-      order.sub_id ||
-      crypto.randomBytes(12).toString("hex");
+    const subId = order.sub_id || crypto.randomBytes(12).toString('hex');
 
     updateOrder(orderId, {
-      sub_id: subId
+      sub_id: subId,
     });
 
     order = getOrder(orderId);
 
-    const durationDays =
-      Number(order.duration_months) * 30;
+    const durationDays = Number(order.duration_months) * 30;
 
-    const trafficGb = Number(
-      order.traffic_gb || 0
-    );
+    const trafficGb = Number(order.traffic_gb || 0);
 
     const result = await provisionClient({
       email: order.xui_email,
@@ -482,7 +414,7 @@ async function createAndDeliverService(orderId, adminCtx) {
       telegramId: Number(order.telegram_user_id),
       durationDays,
       trafficGb,
-      limitIp: Number(order.limit_ip)
+      limitIp: Number(order.limit_ip),
     });
 
     // Save or update the user's service profile.
@@ -491,22 +423,22 @@ async function createAndDeliverService(orderId, adminCtx) {
       userId: order.telegram_user_id,
       username: result.email,
       subId: result.subId,
-      inboundId: result.inboundId
+      inboundId: result.inboundId,
     });
 
     updateOrder(orderId, {
-      status: "active",
-      provision_status: "completed",
+      status: 'active',
+      provision_status: 'completed',
       xui_email: result.email,
       sub_id: result.subId,
-      inbound_id: result.inboundId
+      inbound_id: result.inboundId,
     });
 
     const userMessage =
       `پرداخت شما تأیید شد.\n\n` +
       `شماره سفارش: ${order.id}\n` +
       `👤 Username: ${result.email}\n` +
-      `📦 حجم جدید: ${order.unlimited ? "نامحدود" : `${trafficGb} گیگابایت`}\n` +
+      `📦 حجم جدید: ${order.unlimited ? 'نامحدود' : `${trafficGb} گیگابایت`}\n` +
       `⏳ مدت جدید: ${durationDays} روز\n` +
       `👥 تعداد کاربران: ${getUserLimitLabel(order.limit_ip)}\n\n` +
       `حجم و اعتبار قبلی این Username جایگزین شده‌اند.\n` +
@@ -514,65 +446,42 @@ async function createAndDeliverService(orderId, adminCtx) {
       `لینک‌ها را با دکمه زیر هر پیام کپی کن.`;
 
     try {
-      await bot.telegram.sendMessage(
-        order.telegram_user_id,
-        userMessage
-      );
+      await bot.telegram.sendMessage(order.telegram_user_id, userMessage);
 
-      await sendCopyableLink(
-        order.telegram_user_id,
-        "🔗 لینک VLESS:",
-        result.vlessUrl,
-        "📋 کپی لینک VLESS"
-      );
+      await sendCopyableLink(order.telegram_user_id, '🔗 لینک VLESS:', result.vlessUrl, '📋 کپی لینک VLESS');
 
-      await sendCopyableLink(
-        order.telegram_user_id,
-        "📡 لینک Subscription:",
-        result.subscriptionUrl,
-        "📋 کپی لینک Subscription"
-      );
+      await sendCopyableLink(order.telegram_user_id, '📡 لینک Subscription:', result.subscriptionUrl, '📋 کپی لینک Subscription');
     } catch (deliveryError) {
-      console.error(
-        "Service created, but Telegram delivery failed:",
-        deliveryError
-      );
+      console.error('Service created, but Telegram delivery failed:', deliveryError);
 
-      await adminCtx.reply(
-        `سرویس سفارش ${orderId} ساخته شد، اما ارسال پیام به کاربر شکست خورد.\n` +
-        `خطا: ${deliveryError.message}`
-      );
+      await adminCtx.reply(`سرویس سفارش ${orderId} ساخته شد، اما ارسال پیام به کاربر شکست خورد.\n` + `خطا: ${deliveryError.message}`);
     }
 
     await adminCtx.reply(
       ` سفارش ${orderId} با موفقیت فعال شد.\n` +
-      `Username: ${result.email}\n` +
-      `Inbound: ${result.inboundId}\n` +
-      `Existing client updated: ${result.updatedExistingClient ? "Yes" : "No"}`
+        `Username: ${result.email}\n` +
+        `Inbound: ${result.inboundId}\n` +
+        `Existing client updated: ${result.updatedExistingClient ? 'Yes' : 'No'}`,
     );
 
     return result;
   } catch (error) {
     updateOrder(orderId, {
-      status: "failed",
-      provision_status: "failed"
+      status: 'failed',
+      provision_status: 'failed',
     });
 
-    console.error(
-      `Provisioning failed for order ${orderId}:`,
-      error
-    );
+    console.error(`Provisioning failed for order ${orderId}:`, error);
 
     await adminCtx.reply(
       ` پرداخت سفارش ${orderId} تأیید شده، اما ساخت یا به‌روزرسانی سرویس شکست خورد.\n\n` +
-      `خطا: ${error.message}\n\n` +
-      `قبل از تلاش مجدد، وضعیت کلاینت را در 3x-ui بررسی کن.\n` +
-      `سپس دستور زیر را اجرا کن:\n` +
-      `/retry_${orderId}`
+        `خطا: ${error.message}\n\n` +
+        `قبل از تلاش مجدد، وضعیت کلاینت را در 3x-ui بررسی کن.\n` +
+        `سپس دستور زیر را اجرا کن:\n` +
+        `/retry_${orderId}`,
     );
   }
 }
-
 // --------------------------------------------------
 // Start
 // --------------------------------------------------
@@ -580,13 +489,10 @@ async function createAndDeliverService(orderId, adminCtx) {
 bot.start(async (ctx) => {
   clearPurchase(ctx);
 
-  await ctx.reply(
-    `سلام 👋\n\nبه ${process.env.STORE_NAME} خوش آمدید.`,
-    mainMenu()
-  );
+  await ctx.reply(`سلام 👋\n\nبه ${process.env.STORE_NAME} خوش آمدید.`, mainMenu());
 });
 
-bot.command("myid", async (ctx) => {
+bot.command('myid', async (ctx) => {
   await ctx.reply(`Telegram ID: ${ctx.from.id}`);
 });
 
@@ -594,7 +500,7 @@ bot.command("myid", async (ctx) => {
 // Purchase: country
 // --------------------------------------------------
 
-bot.action("show_products", async (ctx) => {
+bot.action('show_products', async (ctx) => {
   await ctx.answerCbQuery();
 
   clearPurchase(ctx);
@@ -606,30 +512,17 @@ bot.action("show_products", async (ctx) => {
         {
           code: product.country,
           name: product.countryName,
-          flag: product.name.split(" ")[0]
-        }
-      ])
-    ).values()
+          flag: product.name.split(' ')[0],
+        },
+      ]),
+    ).values(),
   ];
 
-  const buttons = countries.map((country) => [
-    Markup.button.callback(
-      `${country.flag} ${country.name}`,
-      `country_${country.code}`
-    )
-  ]);
+  const buttons = countries.map((country) => [Markup.button.callback(`${country.flag} ${country.name}`, `country_${country.code}`)]);
 
-  buttons.push([
-    Markup.button.callback(
-      "🔙 منوی اصلی",
-      "main_menu"
-    )
-  ]);
+  buttons.push([Markup.button.callback('🔙 منوی اصلی', 'main_menu')]);
 
-  await ctx.reply(
-    "🌍 لوکیش  موردنظرت رو انتخاب کن:",
-    Markup.inlineKeyboard(buttons)
-  );
+  await ctx.reply('🌍 لوکیش  موردنظرت رو انتخاب کن:', Markup.inlineKeyboard(buttons));
 });
 
 bot.action(/^country_(DE|NL)$/, async (ctx) => {
@@ -639,42 +532,19 @@ bot.action(/^country_(DE|NL)$/, async (ctx) => {
 
   ctx.session.purchase = {
     country,
-    step: "duration"
+    step: 'duration',
   };
 
-  const countryName = products.find(
-    (product) => product.country === country
-  )?.countryName;
+  const countryName = products.find((product) => product.country === country)?.countryName;
 
   await ctx.reply(
-    `🌍 کشور انتخاب‌شده: ${countryName}\n\n` +
-    `⏳ مدت اشتراک را انتخاب کن:`,
+    `🌍 کشور انتخاب‌شده: ${countryName}\n\n` + `⏳ مدت اشتراک را انتخاب کن:`,
     Markup.inlineKeyboard([
-      [
-        Markup.button.callback(
-          "۱ ماهه",
-          `duration_${country}_1`
-        )
-      ],
-      [
-        Markup.button.callback(
-          "۲ ماهه",
-          `duration_${country}_2`
-        )
-      ],
-      [
-        Markup.button.callback(
-          "۳ ماهه",
-          `duration_${country}_3`
-        )
-      ],
-      [
-        Markup.button.callback(
-          "🔙 بازگشت",
-          "show_products"
-        )
-      ]
-    ])
+      [Markup.button.callback('۱ ماهه', `duration_${country}_1`)],
+      [Markup.button.callback('۲ ماهه', `duration_${country}_2`)],
+      [Markup.button.callback('۳ ماهه', `duration_${country}_3`)],
+      [Markup.button.callback('🔙 بازگشت', 'show_products')],
+    ]),
   );
 });
 
@@ -691,44 +561,21 @@ bot.action(/^duration_(DE|NL)_(1|2|3)$/, async (ctx) => {
   const purchase = ctx.session.purchase;
 
   if (!purchase || purchase.country !== country) {
-    return ctx.reply(
-      "مرحله خرید معتبر نیست. دوباره شروع کن."
-    );
+    return ctx.reply('مرحله خرید معتبر نیست. دوباره شروع کن.');
   }
 
   purchase.months = months;
-  purchase.step = "traffic";
+  purchase.step = 'traffic';
 
-  const countryName = products.find(
-    (product) => product.country === country
-  )?.countryName;
+  const countryName = products.find((product) => product.country === country)?.countryName;
 
-  const availableProducts = products.filter(
-    (product) =>
-      product.country === country &&
-      Number(product.months) === months
-  );
+  const availableProducts = products.filter((product) => product.country === country && Number(product.months) === months);
 
-  const buttons = availableProducts.map((product) => [
-    Markup.button.callback(
-      `${product.trafficLabel} | ${formatPrice(product.price)}`,
-      `select_plan_${product.id}`
-    )
-  ]);
+  const buttons = availableProducts.map((product) => [Markup.button.callback(`${product.trafficLabel} | ${formatPrice(product.price)}`, `select_plan_${product.id}`)]);
 
-  buttons.push([
-    Markup.button.callback(
-      "🔙 بازگشت به لوکیشن",
-      "show_products"
-    )
-  ]);
+  buttons.push([Markup.button.callback('🔙 بازگشت به لوکیشن', 'show_products')]);
 
-  await ctx.reply(
-    `🌍 کشور: ${countryName}\n` +
-    `⏳ مدت: ${months} ماه\n\n` +
-    `📦 حجم موردنظرت رو انتخاب کن:`,
-    Markup.inlineKeyboard(buttons)
-  );
+  await ctx.reply(`🌍 کشور: ${countryName}\n` + `⏳ مدت: ${months} ماه\n\n` + `📦 حجم موردنظرت رو انتخاب کن:`, Markup.inlineKeyboard(buttons));
 });
 
 // --------------------------------------------------
@@ -741,50 +588,26 @@ bot.action(/^select_plan_(\d+)$/, async (ctx) => {
   const product = getProduct(ctx.match[1]);
   const purchase = ctx.session.purchase;
 
-  if (
-    !product ||
-    !purchase ||
-    purchase.country !== product.country ||
-    Number(purchase.months) !== Number(product.months) ||
-    purchase.step !== "traffic"
-  ) {
-    return ctx.reply(
-      "سرویسی که انتخاب کردی در حال حاضر در دسترس نیست 😔 , در حال بررسی موضـوع هستیـم."
-    );
+  if (!product || !purchase || purchase.country !== product.country || Number(purchase.months) !== Number(product.months) || purchase.step !== 'traffic') {
+    return ctx.reply('سرویسی که انتخاب کردی در حال حاضر در دسترس نیست 😔 , در حال بررسی موضـوع هستیـم.');
   }
 
   purchase.productId = product.id;
-  purchase.step = "limit";
+  purchase.step = 'limit';
 
   await ctx.reply(
     ` سرویس انتخاب شد:\n\n` +
-    `🌍 کشور: ${product.countryName}\n` +
-    `⏳ مدت: ${product.duration}\n` +
-    `📦 حجم: ${product.trafficLabel}\n` +
-    `💰 قیمت: ${formatPrice(product.price)}\n\n` +
-    `👥 تعداد کاربران مجاز هم‌زمان را انتخاب کن:`,
+      `🌍 کشور: ${product.countryName}\n` +
+      `⏳ مدت: ${product.duration}\n` +
+      `📦 حجم: ${product.trafficLabel}\n` +
+      `💰 قیمت پایه (۱ کاربره): ${formatPrice(product.price)}\n\n` +
+      `👥 تعداد کاربران مجاز هم‌زمان را انتخاب کن:`,
     Markup.inlineKeyboard([
-      [
-        Markup.button.callback("۱ کاربره", "limit_1"),
-        Markup.button.callback("۲ کاربره", "limit_2")
-      ],
-      [
-        Markup.button.callback("۳ کاربره", "limit_3"),
-        Markup.button.callback("بدون محدودیت", "limit_0")
-      ],
-      [
-        Markup.button.callback(
-          "🔙 بازگشت به انتخاب حجم",
-          `duration_${product.country}_${product.months}`
-        )
-      ],
-      [
-        Markup.button.callback(
-          " لغو خرید",
-          "cancel_purchase"
-        )
-      ]
-    ])
+      [Markup.button.callback('۱ کاربره', 'limit_1'), Markup.button.callback('۲ کاربره', 'limit_2')],
+      [Markup.button.callback('۳ کاربره', 'limit_3'), Markup.button.callback('بدون محدودیت', 'limit_0')],
+      [Markup.button.callback('🔙 بازگشت به انتخاب حجم', `duration_${product.country}_${product.months}`)],
+      [Markup.button.callback(' لغو خرید', 'cancel_purchase')],
+    ]),
   );
 });
 
@@ -797,10 +620,8 @@ bot.action(/^limit_(0|1|2|3)$/, async (ctx) => {
 
   const purchase = ctx.session.purchase;
 
-  if (!purchase || purchase.step !== "limit") {
-    return ctx.reply(
-      "مرحله خرید منقضی شده, دوباره شروع کن."
-    );
+  if (!purchase || purchase.step !== 'limit') {
+    return ctx.reply('مرحله خرید منقضی شده, دوباره شروع کن.');
   }
 
   purchase.limitIp = Number(ctx.match[1]);
@@ -817,23 +638,16 @@ bot.action(/^profile_use_([a-zA-Z0-9_-]{3,64})$/, async (ctx) => {
 
   const purchase = ctx.session.purchase;
 
-  if (!purchase || purchase.step !== "choose_username") {
-    return ctx.reply(
-      "مرحله انتخاب Username معتبر نیست."
-    );
+  if (!purchase || purchase.step !== 'choose_username') {
+    return ctx.reply('مرحله انتخاب Username معتبر نیست.');
   }
 
   const username = ctx.match[1];
 
-  const profile = getUserProfile(
-    ctx.from.id,
-    username
-  );
+  const profile = getUserProfile(ctx.from.id, username);
 
   if (!profile) {
-    return ctx.reply(
-      "این Username در حساب شما پیدا نشد. دوباره انتخاب کن."
-    );
+    return ctx.reply('این Username در حساب شما پیدا نشد. دوباره انتخاب کن.');
   }
 
   purchase.username = profile.xui_email;
@@ -843,19 +657,19 @@ bot.action(/^profile_use_([a-zA-Z0-9_-]{3,64})$/, async (ctx) => {
   await showInvoice(ctx);
 });
 
-bot.action("username_new", async (ctx) => {
+bot.action('username_new', async (ctx) => {
   await ctx.answerCbQuery();
 
   const purchase = ctx.session.purchase;
 
   if (!purchase) {
-    return ctx.reply("فرایند خرید پیدا نشد.");
+    return ctx.reply('فرایند خرید پیدا نشد.');
   }
 
   await showNewUsernameOptions(ctx);
 });
 
-bot.action("username_back", async (ctx) => {
+bot.action('username_back', async (ctx) => {
   await ctx.answerCbQuery();
 
   await showUsernameOptions(ctx);
@@ -865,20 +679,13 @@ bot.action("username_back", async (ctx) => {
 // Purchase: new username
 // --------------------------------------------------
 
-bot.action("username_auto", async (ctx) => {
+bot.action('username_auto', async (ctx) => {
   await ctx.answerCbQuery();
 
   const purchase = ctx.session.purchase;
 
-  if (
-    !purchase ||
-    !["choose_username", "new_username", "username"].includes(
-      purchase.step
-    )
-  ) {
-    return ctx.reply(
-      "مرحله انتخاب Username معتبر نیست."
-    );
+  if (!purchase || !['choose_username', 'new_username', 'username'].includes(purchase.step)) {
+    return ctx.reply('مرحله انتخاب Username معتبر نیست.');
   }
 
   let username;
@@ -895,69 +702,56 @@ bot.action("username_auto", async (ctx) => {
   await showInvoice(ctx);
 });
 
-bot.action("username_custom", async (ctx) => {
+bot.action('username_custom', async (ctx) => {
   await ctx.answerCbQuery();
 
   const purchase = ctx.session.purchase;
 
-  if (
-    !purchase ||
-    !["new_username", "username"].includes(purchase.step)
-  ) {
-    return ctx.reply(
-      "مرحله انتخاب Username معتبر نیست."
-    );
+  if (!purchase || !['new_username', 'username'].includes(purchase.step)) {
+    return ctx.reply('مرحله انتخاب Username معتبر نیست.');
   }
 
-  purchase.step = "awaiting_username";
+  purchase.step = 'awaiting_username';
 
-  await ctx.reply(
-    "✏️ Username دلخواه را ارسال کن.\n\n" +
-    "فقط حروف انگلیسی، عدد، _ و - مجاز هستند.\n" +
-    "حداقل ۳ و حداکثر ۳۲ کاراکتر."
-  );
+  await ctx.reply('✏️ Username دلخواه را ارسال کن.\n\n' + 'فقط حروف انگلیسی، عدد، _ و - مجاز هستند.\n' + 'حداقل ۳ و حداکثر ۳۲ کاراکتر.');
 });
 
-bot.on("text", async (ctx, next) => {
+bot.on('text', async (ctx, next) => {
   const purchase = ctx.session?.purchase;
 
-  if (!purchase || purchase.step !== "awaiting_username") {
+  if (!purchase || purchase.step !== 'awaiting_username') {
     return next();
   }
 
   const username = ctx.message.text.trim();
 
-  if (username.startsWith("/")) {
+  if (username.startsWith('/')) {
     return next();
   }
 
   if (!isValidUsername(username)) {
-    return ctx.reply(
-      " فرمت Username معتبر نیست. باید ۳ تا ۳۲ کاراکتر و فقط شامل حروف انگلیسی، عدد، _ یا - باشد."
-    );
+    return ctx.reply(' فرمت Username معتبر نیست. باید ۳ تا ۳۲ کاراکتر و فقط شامل حروف انگلیسی، عدد، _ یا - باشد.');
   }
 
   if (isUsernameTaken(username)) {
-    return ctx.reply(
-      " این Username قبلاً استفاده شده است. برای استفاده از آن، از فهرست Usernameهای قبلی انتخابش کن."
-    );
+    return ctx.reply(' این Username قبلاً استفاده شده است. برای استفاده از آن، از فهرست Usernameهای قبلی انتخابش کن.');
   }
 
   purchase.username = username;
   purchase.profileInboundId = null;
   purchase.profileSubId = null;
-  purchase.step = "confirm";
+  purchase.step = 'confirm';
 
   await showInvoice(ctx);
 });
 
-bot.action("change_username", async (ctx) => {
+bot.action('change_username', async (ctx) => {
   await ctx.answerCbQuery();
 
   const purchase = ctx.session.purchase;
 
   if (!purchase) {
-    return ctx.reply("فرایند خرید پیدا نشد.");
+    return ctx.reply('فرایند خرید پیدا نشد.');
   }
 
   delete purchase.username;
@@ -971,76 +765,52 @@ bot.action("change_username", async (ctx) => {
 // Purchase: confirm order
 // --------------------------------------------------
 
-bot.action("confirm_order", async (ctx) => {
+bot.action('confirm_order', async (ctx) => {
   const purchase = ctx.session?.purchase;
 
-  if (
-    !purchase ||
-    purchase.step !== "confirm" ||
-    !purchase.productId ||
-    !purchase.username ||
-    !Number.isInteger(purchase.limitIp)
-  ) {
-    return ctx.answerCbQuery(
-      "اطلاعات سفارش ناقص است.",
-      { show_alert: true }
-    );
+  if (!purchase || purchase.step !== 'confirm' || !purchase.productId || !purchase.username || !Number.isInteger(purchase.limitIp)) {
+    return ctx.answerCbQuery('اطلاعات سفارش ناقص است.', { show_alert: true });
   }
 
   const product = getProduct(purchase.productId);
 
   if (!product) {
-    return ctx.answerCbQuery(
-      "محصول پیدا نشد.",
-      { show_alert: true }
-    );
+    return ctx.answerCbQuery('محصول پیدا نشد.', { show_alert: true });
   }
 
-  const existingOpenOrder = getUserOrders(ctx.from.id).find(
-    (order) =>
-      ["awaiting_payment", "payment_review"].includes(order.status)
-  );
+  const existingOpenOrder = getUserOrders(ctx.from.id).find((order) => ['awaiting_payment', 'payment_review'].includes(order.status));
 
   if (existingOpenOrder) {
-    return ctx.answerCbQuery(
-      `ابتدا وضعیت سفارش ${existingOpenOrder.id} را مشخص کن.`,
-      { show_alert: true }
-    );
+    return ctx.answerCbQuery(`ابتدا وضعیت سفارش ${existingOpenOrder.id} را مشخص کن.`, { show_alert: true });
   }
 
   let profile = null;
 
   if (purchase.profileInboundId) {
-    profile = getUserProfile(
-      ctx.from.id,
-      purchase.username
-    );
+    profile = getUserProfile(ctx.from.id, purchase.username);
 
     if (!profile) {
-      return ctx.answerCbQuery(
-        "Username انتخاب‌شده معتبر نیست.",
-        { show_alert: true }
-      );
+      return ctx.answerCbQuery('Username انتخاب‌شده معتبر نیست.', { show_alert: true });
     }
   } else if (isUsernameTaken(purchase.username)) {
-    return ctx.answerCbQuery(
-      "این Username قبلاً استفاده شده است. آن را از فهرست Usernameهای قبلی انتخاب کن.",
-      { show_alert: true }
-    );
+    return ctx.answerCbQuery('این Username قبلاً استفاده شده است. آن را از فهرست Usernameهای قبلی انتخاب کن.', { show_alert: true });
   }
 
-  const selectedInboundId = profile?.inbound_id
-    ? Number(profile.inbound_id)
-    : Number(product.inboundId);
+  const selectedInboundId = profile?.inbound_id ? Number(profile.inbound_id) : Number(product.inboundId);
 
-  const serverProduct = profile?.inbound_id
-    ? getProductByInbound(profile.inbound_id)
-    : null;
+  const serverProduct = profile?.inbound_id ? getProductByInbound(profile.inbound_id) : null;
+
+  const extraPrice = getPriceExtra(purchase.limitIp);
+
+  const finalPrice = calculateProductPrice(product.price, purchase.limitIp);
 
   const orderProduct = {
     ...product,
+    price: finalPrice,
+    basePrice: Number(product.price),
+    extraPrice,
     inboundId: selectedInboundId,
-    country: serverProduct?.country || product.country
+    country: serverProduct?.country || product.country,
   };
 
   let order;
@@ -1052,29 +822,24 @@ bot.action("confirm_order", async (ctx) => {
       product: orderProduct,
       xuiEmail: purchase.username,
       limitIp: purchase.limitIp,
-      inboundId: selectedInboundId
+      inboundId: selectedInboundId,
     });
   } catch (error) {
-    console.error("Create order failed:", error);
+    console.error('Create order failed:', error);
 
-    return ctx.answerCbQuery(
-      "ثبت سفارش انجام نشد. اطلاعات سفارش را بررسی کن.",
-      { show_alert: true }
-    );
+    return ctx.answerCbQuery('ثبت سفارش انجام نشد. اطلاعات سفارش را بررسی کن.', { show_alert: true });
   }
 
   clearPurchase(ctx);
 
-  await ctx.answerCbQuery("سفارش ثبت شد.");
+  await ctx.answerCbQuery('سفارش ثبت شد.');
 
   try {
     await sendPaymentInvoice(ctx, order);
   } catch (error) {
-    console.error("Payment invoice error:", error);
+    console.error('Payment invoice error:', error);
 
-    await ctx.reply(
-      `سفارش ${order.id} ثبت شد، اما اطلاعات پرداخت ارسال نشد. با پشتیبانی تماس بگیر.`
-    );
+    await ctx.reply(`سفارش ${order.id} ثبت شد، اما اطلاعات پرداخت ارسال نشد. با پشتیبانی تماس بگیر.`);
   }
 });
 
@@ -1085,127 +850,80 @@ bot.action("confirm_order", async (ctx) => {
 bot.action(/^cancel_order_(\d+)$/, async (ctx) => {
   const orderId = Number(ctx.match[1]);
 
-  const cancelled = cancelUnpaidOrder(
-    orderId,
-    ctx.from.id
-  );
+  const cancelled = cancelUnpaidOrder(orderId, ctx.from.id);
 
   if (!cancelled) {
-    return ctx.answerCbQuery(
-      "این سفارش پیدا نشد یا دیگر قابل لغو نیست.",
-      { show_alert: true }
-    );
+    return ctx.answerCbQuery('این سفارش پیدا نشد یا دیگر قابل لغو نیست.', { show_alert: true });
   }
 
-  await ctx.answerCbQuery("سفارش لغو شد.");
+  await ctx.answerCbQuery('سفارش لغو شد.');
 
-  await ctx.reply(
-    `سفارش ${orderId} لغو شد.`,
-    mainMenu()
-  );
+  await ctx.reply(`سفارش ${orderId} لغو شد.`, mainMenu());
 });
 
-bot.action("cancel_purchase", async (ctx) => {
+bot.action('cancel_purchase', async (ctx) => {
   await ctx.answerCbQuery();
 
   clearPurchase(ctx);
 
-  await ctx.reply(
-    "خرید لغو شد.",
-    mainMenu()
-  );
+  await ctx.reply('خرید لغو شد.', mainMenu());
 });
 
-bot.command("cancel", async (ctx) => {
+bot.command('cancel', async (ctx) => {
   clearPurchase(ctx);
 
-  await ctx.reply(
-    "فرایند خرید لغو شد.",
-    mainMenu()
-  );
+  await ctx.reply('فرایند خرید لغو شد.', mainMenu());
 });
 
 // --------------------------------------------------
 // Payment receipt
 // --------------------------------------------------
 
-bot.on("photo", async (ctx) => {
+bot.on('photo', async (ctx) => {
   try {
-    const payableOrder = getUserOrders(ctx.from.id).find(
-      (order) =>
-        ["awaiting_payment", "rejected"].includes(order.status)
-    );
+    const payableOrder = getUserOrders(ctx.from.id).find((order) => ['awaiting_payment', 'rejected'].includes(order.status));
 
     if (!payableOrder) {
-      return ctx.reply(
-        "سفارش آماده دریافت رسید پیدا نشد."
-      );
+      return ctx.reply('سفارش آماده دریافت رسید پیدا نشد.');
     }
 
-    const photo =
-      ctx.message.photo[ctx.message.photo.length - 1];
+    const photo = ctx.message.photo[ctx.message.photo.length - 1];
 
-    const saved = submitPaymentReceipt(
-      payableOrder.id,
-      ctx.from.id,
-      photo.file_id
-    );
+    const saved = submitPaymentReceipt(payableOrder.id, ctx.from.id, photo.file_id);
 
     if (!saved) {
-      return ctx.reply(
-        "وضعیت سفارش تغییر کرده است و این رسید ثبت نشد."
-      );
+      return ctx.reply('وضعیت سفارش تغییر کرده است و این رسید ثبت نشد.');
     }
 
     const order = getOrder(payableOrder.id);
     const product = getProduct(order.product_id);
 
-    await ctx.reply(
-      ` رسید سفارش ${order.id} دریافت شد.\n\n` +
-      `وضعیت: در انتظار بررسی ادمین\n` +
-      `پس از تأیید پرداخت، سرویس برایت فعال می‌شود.`
-    );
+    await ctx.reply(` رسید سفارش ${order.id} دریافت شد.\n\n` + `وضعیت: در انتظار بررسی ادمین\n` + `پس از تأیید پرداخت، سرویس برایت فعال می‌شود.`);
 
     const caption =
       `🧾 رسید پرداخت جدید\n\n` +
       `شماره سفارش: ${order.id}\n` +
       `شناسه تلگرام: ${order.telegram_user_id}\n` +
-      `Username تلگرام: ${order.telegram_username || "ندارد"}\n\n` +
+      `Username تلگرام: ${order.telegram_username || 'ندارد'}\n\n` +
       `کشور: ${order.country || product?.countryName}\n` +
       `مدت: ${order.duration_months} ماه\n` +
-      `حجم: ${order.unlimited ? "نامحدود" : `${order.traffic_gb} گیگابایت`}\n` +
+      `حجم: ${order.unlimited ? 'نامحدود' : `${order.traffic_gb} گیگابایت`}\n` +
       `تعداد کاربران: ${getUserLimitLabel(order.limit_ip)}\n` +
       `Username سرویس: ${order.xui_email}\n` +
       `مبلغ: ${formatPrice(order.price)}\n\n` +
       `وضعیت: در انتظار بررسی`;
 
-    await ctx.telegram.sendPhoto(
-      ADMIN_ID,
-      photo.file_id,
-      {
-        caption,
-        reply_markup: Markup.inlineKeyboard([
-          [
-            Markup.button.callback(
-              " تأیید پرداخت",
-              `payment_approve_${order.id}`
-            )
-          ],
-          [
-            Markup.button.callback(
-              " رد پرداخت",
-              `payment_reject_${order.id}`
-            )
-          ]
-        ]).reply_markup
-      }
-    );
+    await ctx.telegram.sendPhoto(ADMIN_ID, photo.file_id, {
+      caption,
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(' تأیید پرداخت', `payment_approve_${order.id}`)],
+        [Markup.button.callback(' رد پرداخت', `payment_reject_${order.id}`)],
+      ]).reply_markup,
+    });
   } catch (error) {
-    console.error("Payment receipt error:", error);
+    console.error('Payment receipt error:', error);
 
-    await ctx.reply(
-      "در دریافت یا ارسال رسید خطایی رخ داد. وضعیت سفارش را بررسی کن."
-    );
+    await ctx.reply('در دریافت یا ارسال رسید خطایی رخ داد. وضعیت سفارش را بررسی کن.');
   }
 });
 
@@ -1215,30 +933,22 @@ bot.on("photo", async (ctx) => {
 
 bot.action(/^payment_approve_(\d+)$/, async (ctx) => {
   if (String(ctx.from.id) !== String(ADMIN_ID)) {
-    return ctx.answerCbQuery(
-      "اجازه تأیید پرداخت را نداری.",
-      { show_alert: true }
-    );
+    return ctx.answerCbQuery('اجازه تأیید پرداخت را نداری.', { show_alert: true });
   }
 
   const orderId = Number(ctx.match[1]);
   const approved = approvePayment(orderId);
 
   if (!approved) {
-    return ctx.answerCbQuery(
-      "این سفارش در انتظار بررسی نیست یا قبلاً بررسی شده است.",
-      { show_alert: true }
-    );
+    return ctx.answerCbQuery('این سفارش در انتظار بررسی نیست یا قبلاً بررسی شده است.', { show_alert: true });
   }
 
-  await ctx.answerCbQuery("پرداخت تأیید شد.");
+  await ctx.answerCbQuery('پرداخت تأیید شد.');
 
   try {
-    await ctx.editMessageCaption(
-      ` پرداخت سفارش ${orderId} تأیید شد.\nدر حال ساخت یا به‌روزرسانی سرویس...`
-    );
+    await ctx.editMessageCaption(` پرداخت سفارش ${orderId} تأیید شد.\nدر حال ساخت یا به‌روزرسانی سرویس...`);
   } catch (error) {
-    console.error("Could not update receipt caption:", error);
+    console.error('Could not update receipt caption:', error);
   }
 
   await createAndDeliverService(orderId, ctx);
@@ -1250,52 +960,34 @@ bot.action(/^payment_approve_(\d+)$/, async (ctx) => {
 
 bot.action(/^payment_reject_(\d+)$/, async (ctx) => {
   if (String(ctx.from.id) !== String(ADMIN_ID)) {
-    return ctx.answerCbQuery(
-      "اجازه رد پرداخت را نداری.",
-      { show_alert: true }
-    );
+    return ctx.answerCbQuery('اجازه رد پرداخت را نداری.', { show_alert: true });
   }
 
   const orderId = Number(ctx.match[1]);
   const order = getOrder(orderId);
 
   if (!order) {
-    return ctx.answerCbQuery(
-      "سفارش پیدا نشد.",
-      { show_alert: true }
-    );
+    return ctx.answerCbQuery('سفارش پیدا نشد.', { show_alert: true });
   }
 
-  const rejected = rejectPayment(
-    orderId,
-    "رسید پرداخت توسط ادمین تأیید نشد."
-  );
+  const rejected = rejectPayment(orderId, 'رسید پرداخت توسط ادمین تأیید نشد.');
 
   if (!rejected) {
-    return ctx.answerCbQuery(
-      "این سفارش در انتظار بررسی نیست یا قبلاً بررسی شده است.",
-      { show_alert: true }
-    );
+    return ctx.answerCbQuery('این سفارش در انتظار بررسی نیست یا قبلاً بررسی شده است.', { show_alert: true });
   }
 
-  await ctx.answerCbQuery("رسید رد شد.");
+  await ctx.answerCbQuery('رسید رد شد.');
 
   try {
-    await ctx.telegram.sendMessage(
-      order.telegram_user_id,
-      ` رسید پرداخت سفارش ${orderId} تأیید نشد.\n\n` +
-      `می‌توانی تصویر رسید صحیح را دوباره ارسال کنی.`
-    );
+    await ctx.telegram.sendMessage(order.telegram_user_id, ` رسید پرداخت سفارش ${orderId} تأیید نشد.\n\n` + `می‌توانی تصویر رسید صحیح را دوباره ارسال کنی.`);
   } catch (error) {
-    console.error("Could not notify user:", error);
+    console.error('Could not notify user:', error);
   }
 
   try {
-    await ctx.editMessageCaption(
-      ` رسید پرداخت سفارش ${orderId} توسط ادمین رد شد.`
-    );
+    await ctx.editMessageCaption(` رسید پرداخت سفارش ${orderId} توسط ادمین رد شد.`);
   } catch (error) {
-    console.error("Could not update rejected caption:", error);
+    console.error('Could not update rejected caption:', error);
   }
 });
 
@@ -1305,26 +997,22 @@ bot.action(/^payment_reject_(\d+)$/, async (ctx) => {
 
 bot.hears(/^\/retry_(\d+)(?:@\w+)?$/, async (ctx) => {
   if (String(ctx.from.id) !== String(ADMIN_ID)) {
-    return ctx.reply("⛔ دسترسی غیرمجاز.");
+    return ctx.reply('⛔ دسترسی غیرمجاز.');
   }
 
   const orderId = Number(ctx.match[1]);
   const order = getOrder(orderId);
 
   if (!order) {
-    return ctx.reply("سفارش پیدا نشد.");
+    return ctx.reply('سفارش پیدا نشد.');
   }
 
-  if (order.payment_status !== "paid") {
-    return ctx.reply(
-      "این سفارش هنوز پرداخت تأییدشده ندارد."
-    );
+  if (order.payment_status !== 'paid') {
+    return ctx.reply('این سفارش هنوز پرداخت تأییدشده ندارد.');
   }
 
-  if (order.provision_status === "completed") {
-    return ctx.reply(
-      "سرویس این سفارش قبلاً ساخته شده است."
-    );
+  if (order.provision_status === 'completed') {
+    return ctx.reply('سرویس این سفارش قبلاً ساخته شده است.');
   }
 
   await createAndDeliverService(orderId, ctx);
@@ -1334,13 +1022,13 @@ bot.hears(/^\/retry_(\d+)(?:@\w+)?$/, async (ctx) => {
 // User: orders
 // --------------------------------------------------
 
-bot.action("my_orders", async (ctx) => {
+bot.action('my_orders', async (ctx) => {
   await ctx.answerCbQuery();
 
   const orders = getUserOrders(ctx.from.id);
 
   if (!orders.length) {
-    return ctx.reply("هنوز سفارشی ثبت نکرده‌ای.");
+    return ctx.reply('هنوز سفارشی ثبت نکرده‌ای.');
   }
 
   const message = orders
@@ -1350,13 +1038,13 @@ bot.action("my_orders", async (ctx) => {
 
       return (
         `🧾 سفارش #${order.id}\n` +
-        `سرویس: ${product?.name || "نامشخص"}\n` +
-        `Username: ${order.xui_email || "نامشخص"}\n` +
-        `مبلغ: ${order.price ? formatPrice(order.price) : "نامشخص"}\n` +
+        `سرویس: ${product?.name || 'نامشخص'}\n` +
+        `Username: ${order.xui_email || 'نامشخص'}\n` +
+        `مبلغ: ${order.price ? formatPrice(order.price) : 'نامشخص'}\n` +
         `وضعیت: ${getStatusLabel(order.status)}`
       );
     })
-    .join("\n\n");
+    .join('\n\n');
 
   await ctx.reply(message);
 });
@@ -1365,110 +1053,79 @@ bot.action("my_orders", async (ctx) => {
 // Admin: orders
 // --------------------------------------------------
 
-bot.command("orders", async (ctx) => {
+bot.command('orders', async (ctx) => {
   if (String(ctx.from.id) !== String(ADMIN_ID)) {
-    return ctx.reply("⛔ دسترسی غیرمجاز.");
+    return ctx.reply('⛔ دسترسی غیرمجاز.');
   }
 
   const orders = getPendingOrders();
 
   if (!orders.length) {
-    return ctx.reply(
-      "سفارش در انتظار یا نیازمند پیگیری وجود ندارد."
-    );
+    return ctx.reply('سفارش در انتظار یا نیازمند پیگیری وجود ندارد.');
   }
 
   const message = orders
     .slice(0, 30)
-    .map((order) => (
-      `#${order.id}\n` +
-      `User: ${order.telegram_user_id}\n` +
-      `Username: ${order.xui_email || "ندارد"}\n` +
-      `Price: ${formatPrice(order.price || 0)}\n` +
-      `Status: ${getStatusLabel(order.status)}\n` +
-      `Payment: ${order.payment_status}\n` +
-      `Provision: ${order.provision_status}` +
-      (
-        order.provision_status === "failed"
-          ? `\n/retry_${order.id}`
-          : ""
-      )
-    ))
-    .join("\n\n");
+    .map(
+      (order) =>
+        `#${order.id}\n` +
+        `User: ${order.telegram_user_id}\n` +
+        `Username: ${order.xui_email || 'ندارد'}\n` +
+        `Price: ${formatPrice(order.price || 0)}\n` +
+        `Status: ${getStatusLabel(order.status)}\n` +
+        `Payment: ${order.payment_status}\n` +
+        `Provision: ${order.provision_status}` +
+        (order.provision_status === 'failed' ? `\n/retry_${order.id}` : ''),
+    )
+    .join('\n\n');
 
   await ctx.reply(message);
 });
 
-bot.command("receipt", async (ctx) => {
+bot.command('receipt', async (ctx) => {
   if (String(ctx.from.id) !== String(ADMIN_ID)) {
-    return ctx.reply("⛔ دسترسی غیرمجاز.");
+    return ctx.reply('⛔ دسترسی غیرمجاز.');
   }
 
-  const match = ctx.message.text.match(
-    /^\/receipt(?:@\w+)?\s+(\d+)$/
-  );
+  const match = ctx.message.text.match(/^\/receipt(?:@\w+)?\s+(\d+)$/);
 
   if (!match) {
-    return ctx.reply("فرمت صحیح: /receipt 15");
+    return ctx.reply('فرمت صحیح: /receipt 15');
   }
 
   const order = getOrder(Number(match[1]));
 
   if (!order || !order.payment_photo_file_id) {
-    return ctx.reply(
-      "رسید ذخیره‌شده‌ای برای این سفارش پیدا نشد."
-    );
+    return ctx.reply('رسید ذخیره‌شده‌ای برای این سفارش پیدا نشد.');
   }
 
-  await ctx.replyWithPhoto(
-    order.payment_photo_file_id,
-    {
-      caption:
-        `رسید ذخیره‌شده سفارش ${order.id}\n` +
-        `وضعیت: ${getStatusLabel(order.status)}`
-    }
-  );
+  await ctx.replyWithPhoto(order.payment_photo_file_id, {
+    caption: `رسید ذخیره‌شده سفارش ${order.id}\n` + `وضعیت: ${getStatusLabel(order.status)}`,
+  });
 });
 
 // --------------------------------------------------
 // Navigation / support
 // --------------------------------------------------
 
-bot.action("main_menu", async (ctx) => {
+bot.action('main_menu', async (ctx) => {
   await ctx.answerCbQuery();
 
   clearPurchase(ctx);
 
-  await ctx.reply(
-    "منوی اصلی:",
-    mainMenu()
-  );
+  await ctx.reply('منوی اصلی:', mainMenu());
 });
 
-bot.action("support", async (ctx) => {
+bot.action('support', async (ctx) => {
   await ctx.answerCbQuery();
 
-  const username = (
-    process.env.SUPPORT_USERNAME || ""
-  ).replace(/^@/, "");
+  const username = (process.env.SUPPORT_USERNAME || '').replace(/^@/, '');
 
   if (!username) {
-    return ctx.reply(
-      "اطلاعات پشتیبانی تنظیم نشده است."
-    );
+    return ctx.reply('اطلاعات پشتیبانی تنظیم نشده است.');
   }
 
-  await ctx.reply(
-    `📞 پشتیبانی: @${username}`,
-    Markup.inlineKeyboard([
-      [
-        Markup.button.url(
-          "ارتباط با پشتیبانی",
-          `https://t.me/${username}`
-        )
-      ]
-    ])
-  );
+  await ctx.reply(`📞 پشتیبانی: @${username}`, Markup.inlineKeyboard([[Markup.button.url('ارتباط با پشتیبانی', `https://t.me/${username}`)]]));
 });
 
 // --------------------------------------------------
@@ -1476,15 +1133,12 @@ bot.action("support", async (ctx) => {
 // --------------------------------------------------
 
 bot.catch((error, ctx) => {
-  console.error(
-    `Telegram error on ${ctx.updateType}:`,
-    error
-  );
+  console.error(`Telegram error on ${ctx.updateType}:`, error);
 });
 
 async function startBot() {
   try {
-    console.log("Starting Telegram bot...");
+    console.log('Starting Telegram bot...');
 
     const me = await bot.telegram.getMe();
 
@@ -1492,14 +1146,14 @@ async function startBot() {
 
     await bot.launch();
 
-    console.log("Telegram bot started successfully!");
+    console.log('Telegram bot started successfully!');
   } catch (error) {
-    console.error("Failed to start bot:", error);
+    console.error('Failed to start bot:', error);
     process.exitCode = 1;
   }
 }
 
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 startBot();
