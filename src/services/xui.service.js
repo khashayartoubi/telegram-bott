@@ -10,6 +10,34 @@ if (!BASE_URL || !API_TOKEN || !SUBSCRIPTION_BASE_URL) {
 
 const baseUrl = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
 
+function getSubscriptionBaseUrl() {
+  try {
+    // A trailing slash is required so the subscription id is appended to the
+    // configured path instead of replacing its final segment.
+    return new URL(`${SUBSCRIPTION_BASE_URL.replace(/\/+$/, '')}/`);
+  } catch {
+    throw new Error(
+      'XUI_SUBSCRIPTION_BASE_URL is invalid. It must have exactly one port, for example http://host:2096/sub/',
+    );
+  }
+}
+
+function createClientRemark(countryCode, username) {
+  return `${String(countryCode || 'VPN').toUpperCase()}-${username}`;
+}
+
+function withRemark(vlessUrl, remark) {
+  try {
+    const url = new URL(vlessUrl);
+    url.hash = remark;
+    return url.toString();
+  } catch {
+    // The panel has already returned a usable VLESS link. Preserve it if it
+    // uses a non-standard format rather than preventing delivery.
+    return vlessUrl;
+  }
+}
+
 async function request(endpoint, options = {}) {
   const url = new URL(endpoint.replace(/^\/+/, ''), baseUrl);
 
@@ -96,6 +124,19 @@ async function getClient(email) {
   return findClient(email);
 }
 
+async function findClientByIdentifier(identifier) {
+  const value = String(identifier || '').trim();
+  if (!value) return null;
+
+  const inbounds = await getInbounds();
+  for (const inbound of inbounds) {
+    const clients = parseInboundSettings(inbound).clients || [];
+    const client = clients.find((item) => String(item.id) === value || String(item.subId) === value);
+    if (client) return { ...client, inboundId: Number(inbound.id), inbound };
+  }
+  return null;
+}
+
 async function validateInbound(inboundId) {
   const inbounds = await getInbounds();
 
@@ -116,7 +157,7 @@ async function validateInbound(inboundId) {
   return inbound;
 }
 
-function buildClient({ existing, email, subId, telegramId, durationDays, trafficGb, limitIp }) {
+function buildClient({ existing, email, subId, telegramId, durationDays, trafficGb, limitIp, countryCode }) {
   const expiryTime = Date.now() + Number(durationDays) * 24 * 60 * 60 * 1000;
 
   const totalGB = Number(trafficGb) * 1024 * 1024 * 1024;
@@ -131,7 +172,8 @@ function buildClient({ existing, email, subId, telegramId, durationDays, traffic
     expiryTime,
     subId: existing?.subId || subId,
     tgId: String(telegramId),
-    comment: existing?.comment || `Telegram VPN - ${email}`,
+    // This is visible in 3x-ui and keeps client records easy to identify.
+    comment: createClientRemark(countryCode, email),
   };
 }
 
@@ -186,7 +228,7 @@ async function updateClient(inboundId, client) {
 }
 
 async function createOrUpdateClient(options) {
-  const { email, subId, inboundId, telegramId, durationDays, trafficGb = 0, limitIp = 0 } = options;
+  const { email, subId, inboundId, telegramId, durationDays, trafficGb = 0, limitIp = 0, countryCode } = options;
 
   const existing = await findClient(email);
 
@@ -203,6 +245,7 @@ async function createOrUpdateClient(options) {
     durationDays,
     trafficGb,
     limitIp,
+    countryCode,
   });
 
   if (existing) {
@@ -261,14 +304,14 @@ async function provisionClient(options) {
     throw new Error('Client was saved, but the VLESS link could not be retrieved.');
   }
 
-  const subscriptionUrl = `${SUBSCRIPTION_BASE_URL.replace(/\/+$/, '')}/${effectiveSubId}`;
+  const subscriptionUrl = new URL(effectiveSubId, getSubscriptionBaseUrl()).toString();
 
   return {
     email: options.email,
     uuid: result.client.id,
     subId: effectiveSubId,
     inboundId: result.inboundId,
-    vlessUrl,
+    vlessUrl: withRemark(vlessUrl, createClientRemark(options.countryCode, options.email)),
     subscriptionUrl,
     expiryTime: result.client.expiryTime,
     updatedExistingClient: result.isExisting,
@@ -279,5 +322,6 @@ module.exports = {
   request,
   getClient,
   findClient,
+  findClientByIdentifier,
   provisionClient,
 };

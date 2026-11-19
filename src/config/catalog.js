@@ -1,8 +1,10 @@
 const USER_LIMIT_OPTIONS = [
-  { value: 1, label: "۱ کاربره" },
-  { value: 2, label: "۲ کاربره" },
-  { value: 3, label: "۳ کاربره" },
-  { value: 0, label: "بدون محدودیت" },
+  { value: 1, label: "۱ کاربره", extraPrice: 0 },
+  { value: 2, label: "۲ کاربره", extraPrice: 50_000 },
+  { value: 3, label: "۳ کاربره", extraPrice: 75_000 },
+  // برای افزودن حالت ۴ کاربره فقط این خط را اضافه کنید.
+  // { value: 4, label: "۴ کاربره", extraPrice: 100_000 },
+  { value: 0, label: "بدون محدودیت", extraPrice: 120_000 },
 ];
 
 const PLAN_DEFINITIONS = [
@@ -25,6 +27,17 @@ const PLAN_DEFINITIONS = [
   { id: 12, months: 3, trafficGb: 0, unlimited: true },
 ];
 
+// تمام قیمت‌ها اینجا متمرکز هستند.
+const PRICING = {
+  pricePerGb: 7_000,
+  pricePerMonth: 1_000,
+  unlimitedByMonth: {
+    1: 300_000,
+    2: 399_000,
+    3: 499_000,
+  },
+};
+
 const COUNTRIES = [
   {
     code: "DE",
@@ -32,6 +45,8 @@ const COUNTRIES = [
     flag: "🇩🇪",
     inboundId: Number(process.env.XUI_DE_INBOUND_ID),
   },
+  // برای افزودن کشور جدید، یک مورد مشابه این اضافه کنید:
+  // { code: "FR", name: "فرانسه", flag: "🇫🇷", inboundId: Number(process.env.XUI_FR_INBOUND_ID) },
   {
     code: "NL",
     name: "هلند",
@@ -42,16 +57,10 @@ const COUNTRIES = [
 
 function calculatePrice({ trafficGb, months, unlimited = false }) {
   if (unlimited) {
-    const unlimitedPrices = {
-      1: 300000,
-      2: 399000,
-      3: 499000,
-    };
-
-    return unlimitedPrices[months];
+    return PRICING.unlimitedByMonth[months];
   }
 
-  return trafficGb * 7000 + months * 1000;
+  return trafficGb * PRICING.pricePerGb + months * PRICING.pricePerMonth;
 }
 
 function formatTraffic(trafficGb, unlimited) {
@@ -62,12 +71,13 @@ function formatDuration(months) {
   return `${months} ماهه`;
 }
 
-const products = COUNTRIES.flatMap((country) =>
+const products = COUNTRIES.flatMap((country, countryIndex) =>
   PLAN_DEFINITIONS.map((plan) => {
     const unlimited = Boolean(plan.unlimited);
 
     return {
-      id: Number(`${country.code === "DE" ? 1 : 2}${plan.id}`),
+      // شناسهٔ عددی پایدار برای سازگاری با سفارش‌های قبلی دیتابیس.
+      id: Number(`${countryIndex + 1}${plan.id}`),
 
       planId: plan.id,
 
@@ -110,5 +120,7 @@ const products = COUNTRIES.flatMap((country) =>
 module.exports = products;
 
 module.exports.USER_LIMIT_OPTIONS = USER_LIMIT_OPTIONS;
+module.exports.COUNTRIES = COUNTRIES;
 module.exports.PLAN_DEFINITIONS = PLAN_DEFINITIONS;
+module.exports.PRICING = PRICING;
 module.exports.calculatePrice = calculatePrice;

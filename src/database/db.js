@@ -32,6 +32,22 @@ db.exec(`
   );
 `);
 
+// A trial may only be claimed once by each Telegram account.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS trial_accounts (
+    telegram_user_id INTEGER PRIMARY KEY,
+    xui_email TEXT NOT NULL UNIQUE,
+    sub_id TEXT NOT NULL,
+    inbound_id INTEGER NOT NULL,
+    campaign_id INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+if (!getColumns('trial_accounts').includes('campaign_id')) {
+  db.exec('ALTER TABLE trial_accounts ADD COLUMN campaign_id INTEGER NOT NULL DEFAULT 1');
+}
+
 function getColumns(tableName) {
   return db
     .prepare(`PRAGMA table_info(${tableName})`)
@@ -318,10 +334,15 @@ function isUsernameTaken(username) {
       SELECT 1
       FROM service_profiles
       WHERE xui_email = ?
+      UNION
+      SELECT 1
+      FROM orders
+      WHERE xui_email = ?
+        AND status != 'cancelled'
       LIMIT 1
     `,
       )
-      .get(username),
+      .get(username, username),
   );
 }
 
@@ -454,8 +475,8 @@ function cancelUnpaidOrder(orderId, userId) {
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
       AND telegram_user_id = ?
-      AND status = 'awaiting_payment'
-      AND payment_status = 'unpaid'
+      AND status IN ('awaiting_payment', 'rejected')
+      AND payment_status IN ('unpaid', 'rejected')
   `,
     )
     .run(Number(orderId), Number(userId));
@@ -652,4 +673,13 @@ module.exports = {
   getUserProfile,
   setDefaultProfile,
   saveServiceProfile,
+  getTrialAccount(userId, campaignId = 1) {
+    return db.prepare('SELECT * FROM trial_accounts WHERE telegram_user_id = ? AND campaign_id = ?').get(Number(userId), Number(campaignId));
+  },
+  saveTrialAccount({ userId, username, subId, inboundId, campaignId = 1 }) {
+    db.prepare(`INSERT INTO trial_accounts (telegram_user_id, xui_email, sub_id, inbound_id, campaign_id) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(telegram_user_id) DO UPDATE SET xui_email = excluded.xui_email, sub_id = excluded.sub_id, inbound_id = excluded.inbound_id, campaign_id = excluded.campaign_id, created_at = CURRENT_TIMESTAMP`)
+      .run(Number(userId), username, subId, Number(inboundId), Number(campaignId));
+    return db.prepare('SELECT * FROM trial_accounts WHERE telegram_user_id = ? AND campaign_id = ?').get(Number(userId), Number(campaignId));
+  },
 };
