@@ -1,7 +1,24 @@
+# Secrets and local environment overrides
 .env
+.env.*
+!.env.example
 
+# Dependencies and runtime state
+node_modules/
+data/
+logs/
+*.log
+*.pid
+*.seed
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
 
-# SQLite database
-data/*.db
-data/*.db-shm
-data/*.db-wal
+# PM2 state and local editor/OS files
+.pm2/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

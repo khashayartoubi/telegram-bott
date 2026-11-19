@@ -5,7 +5,7 @@ const QRCode = require('qrcode');
 const { Telegraf, Markup, session } = require('telegraf');
 
 const products = require('./config/catalog');
-const { USER_LIMIT_OPTIONS, COUNTRIES } = require('./config/catalog');
+const { USER_LIMIT_OPTIONS, COUNTRIES, isCountryEnabled } = require('./config/catalog');
 const texts = require('./config/texts');
 const { createUsername, isValidUsername } = require('./utils/usernames');
 const { getTutorialVideoPath } = require('./services/tutorial-video.service');
@@ -92,6 +92,10 @@ function getProductByInbound(inboundId) {
   return products.find((product) => Number(product.inboundId) === Number(inboundId));
 }
 
+function getPurchasableProducts() {
+  return products.filter((product) => isCountryEnabled(product.country));
+}
+
 function getUserLimitLabel(limitIp) {
   return USER_LIMIT_OPTIONS.find((option) => option.value === Number(limitIp))?.label || 'نامشخص';
 }
@@ -156,6 +160,45 @@ function getStatusLabel(status) {
   };
 
   return labels[status] || status;
+}
+
+async function showMyOrders(ctx, keyboard = mainMenu()) {
+  const orders = getUserOrders(ctx.from.id);
+
+  if (!orders.length) {
+    return ctx.reply('هنوز سفارشی ثبت نکرده‌ای.', keyboard);
+  }
+
+  const message = orders
+    .slice(0, 10)
+    .map((order) => {
+      const product = getProduct(order.product_id);
+
+      return (
+        `🧾 سفارش #${order.id}\n` +
+        `سرویس: ${product?.name || 'نامشخص'}\n` +
+        `Username: ${order.xui_email || 'نامشخص'}\n` +
+        `مبلغ: ${order.price ? formatPrice(order.price) : 'نامشخص'}\n` +
+        `وضعیت: ${getStatusLabel(order.status)}`
+      );
+    })
+    .join('\n\n');
+
+  // فقط سفارش‌هایی که هنوز پرداخت آن‌ها تأیید نشده قابل لغو/ویرایش‌اند.
+  const buttons = orders
+    .filter((order) => ['awaiting_payment', 'rejected'].includes(order.status))
+    .slice(0, 10)
+    .flatMap((order) => [
+      [Markup.button.callback(`✏️ ویرایش سفارش #${order.id}`, `edit_order_${order.id}`)],
+      [Markup.button.callback(`لغو سفارش #${order.id}`, `cancel_order_${order.id}`)],
+    ]);
+
+  if (buttons.length) {
+    buttons.push([backButton()]);
+    return ctx.reply(message, Markup.inlineKeyboard(buttons));
+  }
+
+  return ctx.reply(message, keyboard);
 }
 
 function getSelectedServerInfo(purchase) {
@@ -545,11 +588,8 @@ registerMenuHandler('services', async (ctx) => {
   if (trial) list.push(`🎁 اکانت تست\n👤 ${trial.xui_email}\n📦 ${TRIAL_ACCOUNT.trafficLabel}`);
   await ctx.reply(list.join('\n\n'), mainMenu());
 });
-registerMenuHandler('trial', async (ctx) => {
-  // Reuse the same provision flow as the inline test button.
-  await ctx.reply('برای دریافت اکانت تست، از گزینهٔ «🎁 دریافت اکانت تست» در بخش خرید کانفیگ استفاده کن.');
-  await showProductSelector(ctx);
-});
+registerMenuHandler('orders', async (ctx) => showMyOrders(ctx));
+registerMenuHandler('trial', async (ctx) => claimTrial(ctx));
 
 bot.action('inquiry', async (ctx) => {
   await ctx.answerCbQuery();
@@ -562,9 +602,7 @@ bot.action('wallet', async (ctx) => {
   await ctx.reply(texts.start.wallet, Markup.inlineKeyboard([[backButton()]]));
 });
 
-bot.action('claim_trial', async (ctx) => {
-  await ctx.answerCbQuery();
-
+async function claimTrial(ctx) {
   if (!TRIAL_ACCOUNT.enabled) return ctx.reply('اکانت تست فعلاً غیرفعال است.', mainMenu());
 
   const existing = getTrialAccount(ctx.from.id, TRIAL_ACCOUNT.campaignId);
@@ -599,6 +637,11 @@ bot.action('claim_trial', async (ctx) => {
     console.error('Trial provisioning failed:', error);
     await ctx.reply('ساخت اکانت تست انجام نشد؛ چند دقیقهٔ دیگر دوباره تلاش کن.', mainMenu());
   }
+}
+
+bot.action('claim_trial', async (ctx) => {
+  await ctx.answerCbQuery();
+  await claimTrial(ctx);
 });
 
 // --------------------------------------------------
@@ -610,7 +653,7 @@ async function showProductSelector(ctx) {
 
   const countries = [
     ...new Map(
-      products.map((product) => [
+      getPurchasableProducts().map((product) => [
         product.country,
         {
           code: product.country,
@@ -638,6 +681,10 @@ bot.action(/^country_([A-Z]{2,8})$/, async (ctx) => {
 
   const country = ctx.match[1];
 
+  if (!isCountryEnabled(country)) {
+    return ctx.reply('این لوکیشن فعلاً در دسترس نیست.');
+  }
+
   ctx.session.purchase = {
     country,
     step: 'duration',
@@ -647,7 +694,7 @@ bot.action(/^country_([A-Z]{2,8})$/, async (ctx) => {
 
   if (!countryName) return ctx.reply('این کشور در دسترس نیست.');
 
-  const durations = [...new Set(products.filter((product) => product.country === country).map((product) => product.months))];
+  const durations = [...new Set(getPurchasableProducts().filter((product) => product.country === country).map((product) => product.months))];
 
   await ctx.reply(
     `🌍 کشور انتخاب‌شده: ${countryName}\n\n` + `⏳ مدت اشتراک را انتخاب کن:`,
@@ -677,9 +724,9 @@ bot.action(/^duration_([A-Z]{2,8})_(\d+)$/, async (ctx) => {
   purchase.months = months;
   purchase.step = 'traffic';
 
-  const countryName = products.find((product) => product.country === country)?.countryName;
+  const countryName = getPurchasableProducts().find((product) => product.country === country)?.countryName;
 
-  const availableProducts = products.filter((product) => product.country === country && Number(product.months) === months);
+  const availableProducts = getPurchasableProducts().filter((product) => product.country === country && Number(product.months) === months);
 
   const buttons = availableProducts.map((product) => [Markup.button.callback(`${product.trafficLabel} | ${formatPrice(product.price)}`, `select_plan_${product.id}`)]);
 
@@ -698,7 +745,7 @@ bot.action(/^select_plan_(\d+)$/, async (ctx) => {
   const product = getProduct(ctx.match[1]);
   const purchase = ctx.session.purchase;
 
-  if (!product || !purchase || purchase.country !== product.country || Number(purchase.months) !== Number(product.months) || purchase.step !== 'traffic') {
+  if (!product || !isCountryEnabled(product.country) || !purchase || purchase.country !== product.country || Number(purchase.months) !== Number(product.months) || purchase.step !== 'traffic') {
     return ctx.reply('سرویسی که انتخاب کردی در حال حاضر در دسترس نیست 😔 , در حال بررسی موضـوع هستیـم.');
   }
 
@@ -837,11 +884,11 @@ bot.on('text', async (ctx, next) => {
       clearPurchase(ctx);
       return ctx.reply('منوی اصلی:', mainMenu());
     }
-    const country = COUNTRIES.find((item) => `${item.flag} ${item.name}` === text);
+    const country = COUNTRIES.find((item) => item.enabled !== false && `${item.flag} ${item.name}` === text);
     if (country) {
       keyboardPurchase.country = country.code;
       keyboardPurchase.step = 'keyboard_duration';
-      const months = [...new Set(products.filter((item) => item.country === country.code).map((item) => item.months))];
+      const months = [...new Set(getPurchasableProducts().filter((item) => item.country === country.code).map((item) => item.months))];
       return ctx.reply(`🌍 کشور انتخاب‌شده: ${country.name}\n\n⏳ مدت اشتراک را انتخاب کن:`, fullWidthKeyboard([
         ...months.map((value) => `${value} ماهه`), '🔙 بازگشت به لوکیشن',
       ]));
@@ -850,7 +897,7 @@ bot.on('text', async (ctx, next) => {
   if (keyboardPurchase?.step === 'keyboard_duration') {
     if (text === '🔙 بازگشت به لوکیشن') return showProductSelector(ctx);
     const months = Number(text.replace(/[^0-9]/g, ''));
-    const available = products.filter((item) => item.country === keyboardPurchase.country && item.months === months);
+    const available = getPurchasableProducts().filter((item) => item.country === keyboardPurchase.country && item.months === months);
     if (available.length) {
       keyboardPurchase.months = months;
       keyboardPurchase.step = 'keyboard_plan';
@@ -862,10 +909,10 @@ bot.on('text', async (ctx, next) => {
   if (keyboardPurchase?.step === 'keyboard_plan') {
     if (text === '🔙 بازگشت به مدت') {
       keyboardPurchase.step = 'keyboard_duration';
-      const months = [...new Set(products.filter((item) => item.country === keyboardPurchase.country).map((item) => item.months))];
+      const months = [...new Set(getPurchasableProducts().filter((item) => item.country === keyboardPurchase.country).map((item) => item.months))];
       return ctx.reply('⏳ مدت اشتراک را انتخاب کن:', fullWidthKeyboard([...months.map((value) => `${value} ماهه`), '🔙 بازگشت به لوکیشن']));
     }
-    const product = products.find((item) => item.country === keyboardPurchase.country && item.months === keyboardPurchase.months && `${item.trafficLabel} | ${formatPrice(item.price)}` === text);
+    const product = getPurchasableProducts().find((item) => item.country === keyboardPurchase.country && item.months === keyboardPurchase.months && `${item.trafficLabel} | ${formatPrice(item.price)}` === text);
     if (product) {
       keyboardPurchase.productId = product.id;
       keyboardPurchase.step = 'limit';
@@ -876,7 +923,7 @@ bot.on('text', async (ctx, next) => {
   }
   if (keyboardPurchase?.step === 'limit' && text === '🔙 بازگشت به انتخاب حجم') {
     keyboardPurchase.step = 'keyboard_plan';
-    const available = products.filter((item) => item.country === keyboardPurchase.country && item.months === keyboardPurchase.months);
+    const available = getPurchasableProducts().filter((item) => item.country === keyboardPurchase.country && item.months === keyboardPurchase.months);
     return ctx.reply('📦 حجم موردنظرت را انتخاب کن:', fullWidthKeyboard([...available.map((item) => `${item.trafficLabel} | ${formatPrice(item.price)}`), '🔙 بازگشت به مدت']));
   }
   if (keyboardPurchase?.step === 'limit') {
@@ -1082,12 +1129,12 @@ bot.action(/^edit_order_(\d+)$/, async (ctx) => {
   ctx.session.purchase = { country: order.country, step: 'duration' };
   const country = COUNTRIES.find((item) => item.code === order.country);
 
-  if (!country) {
+  if (!country || !isCountryEnabled(country.code)) {
     clearPurchase(ctx);
     return ctx.reply('کشور سفارش قبلی دیگر در دسترس نیست.');
   }
 
-  const durations = [...new Set(products.filter((product) => product.country === country.code).map((product) => product.months))];
+  const durations = [...new Set(getPurchasableProducts().filter((product) => product.country === country.code).map((product) => product.months))];
 
   await ctx.reply(
     `سفارش ${orderId} لغو شد و می‌توانی نسخهٔ جدید آن را بسازی.\n\n⏳ مدت اشتراک را انتخاب کن:`,
@@ -1280,38 +1327,7 @@ bot.action('my_services', async (ctx) => {
 
 bot.action('my_orders', async (ctx) => {
   await ctx.answerCbQuery();
-
-  const orders = getUserOrders(ctx.from.id);
-
-  if (!orders.length) {
-    return ctx.reply('هنوز سفارشی ثبت نکرده‌ای.');
-  }
-
-  const message = orders
-    .slice(0, 10)
-    .map((order) => {
-      const product = getProduct(order.product_id);
-
-      return (
-        `🧾 سفارش #${order.id}\n` +
-        `سرویس: ${product?.name || 'نامشخص'}\n` +
-        `Username: ${order.xui_email || 'نامشخص'}\n` +
-        `مبلغ: ${order.price ? formatPrice(order.price) : 'نامشخص'}\n` +
-        `وضعیت: ${getStatusLabel(order.status)}`
-      );
-    })
-    .join('\n\n');
-
-  const buttons = orders
-    .filter((order) => ['awaiting_payment', 'rejected'].includes(order.status))
-    .slice(0, 10)
-    .flatMap((order) => [
-      [Markup.button.callback(`✏️ ویرایش سفارش #${order.id}`, `edit_order_${order.id}`)],
-      [Markup.button.callback(` لغو سفارش #${order.id}`, `cancel_order_${order.id}`)],
-    ]);
-
-  if (buttons.length) buttons.push([backButton()]);
-  await ctx.reply(message, buttons.length ? Markup.inlineKeyboard(buttons) : mainMenu());
+  await showMyOrders(ctx, Markup.inlineKeyboard([[backButton()]]));
 });
 
 // --------------------------------------------------

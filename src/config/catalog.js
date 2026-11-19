@@ -44,6 +44,8 @@ const COUNTRIES = [
     name: "آلمان",
     flag: "🇩🇪",
     inboundId: Number(process.env.XUI_DE_INBOUND_ID),
+    // با false کردن این مقدار، تمام پلن‌های آلمان از خرید پنهان می‌شوند.
+    enabled: false,
   },
   // برای افزودن کشور جدید، یک مورد مشابه این اضافه کنید:
   // { code: "FR", name: "فرانسه", flag: "🇫🇷", inboundId: Number(process.env.XUI_FR_INBOUND_ID) },
@@ -52,6 +54,8 @@ const COUNTRIES = [
     name: "هلند",
     flag: "🇳🇱",
     inboundId: Number(process.env.XUI_NL_INBOUND_ID),
+    // با false کردن این مقدار، تمام پلن‌های هلند از خرید پنهان می‌شوند.
+    enabled: true,
   },
 ];
 
@@ -124,3 +128,7 @@ module.exports.COUNTRIES = COUNTRIES;
 module.exports.PLAN_DEFINITIONS = PLAN_DEFINITIONS;
 module.exports.PRICING = PRICING;
 module.exports.calculatePrice = calculatePrice;
+module.exports.isCountryEnabled = (countryCode) =>
+  COUNTRIES.some(
+    (country) => country.code === countryCode && country.enabled !== false,
+  );

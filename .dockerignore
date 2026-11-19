@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.example
+node_modules
+data
+logs
+*.log
+.pm2
+.vscode
+.idea
+README.md
+test-*.js

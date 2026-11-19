@@ -4,7 +4,11 @@
   "main": "index.js",
   "scripts": {
     "start": "node src/bot.js",
-    "dev": "nodemon src/bot.js"
+    "dev": "PM2_HOME=.pm2 pm2 start ecosystem.config.cjs --env development",
+    "dev:stop": "PM2_HOME=.pm2 pm2 delete telegram-bot-dev",
+    "dev:restart": "PM2_HOME=.pm2 pm2 restart telegram-bot-dev --update-env",
+    "dev:logs": "PM2_HOME=.pm2 pm2 logs telegram-bot-dev",
+    "dev:nodemon": "nodemon src/bot.js"
   },
   "keywords": [],
   "author": "",
@@ -22,6 +26,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.7",
     "nodemon": "^3.1.14",
+    "pm2": "^7.1.2",
     "prettier": "^3.10.1",
     "prettier-plugin-embed": "^0.8.2"
   }
