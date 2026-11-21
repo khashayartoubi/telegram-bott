@@ -13,6 +13,5 @@ module.exports = {
   },
   delivery: {
     vlessTitle: '🔗 لینک VLESS (برای اتصال مستقیم):',
-    subscriptionTitle: '📡 لینک اشتراک (نمایش حجم و تاریخ انقضا در V2Box):',
   },
 };
