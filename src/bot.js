@@ -8,8 +8,15 @@ const products = require('./config/catalog');
 const { USER_LIMIT_OPTIONS, COUNTRIES, isCountryEnabled } = require('./config/catalog');
 const texts = require('./config/texts');
 const { createUsername, isValidUsername } = require('./utils/usernames');
-const { getTutorialVideoPath } = require('./services/tutorial-video.service');
-const { START_MENU, TRIAL_ACCOUNT } = require('./config/features');
+const {
+  START_MENU,
+  TRIAL_ACCOUNT,
+  DISCOUNT_CODES,
+  CONNECTION_TUTORIALS,
+  REQUIRED_CHANNEL,
+  SUPPORT,
+  MAX_SERVICE_PROFILES,
+} = require('./config/features');
 
 const {
   createOrder,
@@ -120,6 +127,77 @@ function calculateProductPrice(basePrice, limitIp) {
   }
 
   return base + getPriceExtra(limitIp);
+}
+
+function getDiscount({ code, productId, price }) {
+  const discount = DISCOUNT_CODES.find(
+    (item) => String(item.code).toUpperCase() === String(code).toUpperCase() && item.enabled !== false,
+  );
+
+  if (!discount) return null;
+
+  const productIds = discount.productIds || [];
+  if (productIds.length && !productIds.map(Number).includes(Number(productId))) return null;
+
+  const value = Number(discount.value);
+  const basePrice = Number(price);
+  if (!Number.isFinite(value) || value <= 0 || !Number.isFinite(basePrice) || basePrice < 0) return null;
+
+  const amount = discount.type === 'percent'
+    ? Math.floor((basePrice * value) / 100)
+    : Math.floor(value);
+
+  return {
+    code: String(discount.code).toUpperCase(),
+    amount: Math.min(basePrice, amount),
+  };
+}
+
+function getPurchasePricing(purchase, product) {
+  const beforeDiscount = calculateProductPrice(product.price, purchase.limitIp);
+  const discount = purchase.discountCode
+    ? getDiscount({ code: purchase.discountCode, productId: product.id, price: beforeDiscount })
+    : null;
+
+  return {
+    beforeDiscount,
+    discount,
+    finalPrice: beforeDiscount - (discount?.amount || 0),
+  };
+}
+
+function canCreateNewUsername(userId) {
+  return getUserProfiles(userId).length < MAX_SERVICE_PROFILES;
+}
+
+function getV2BoxSubscriptionInstallUrl(subscriptionUrl) {
+  return `v2box://install-sub?url=${encodeURIComponent(subscriptionUrl)}`;
+}
+
+async function ensureRequiredChannelMembership(ctx) {
+  if (!REQUIRED_CHANNEL.enabled) return true;
+
+  const chatId = String(REQUIRED_CHANNEL.chatId || '').trim();
+  if (!chatId || !REQUIRED_CHANNEL.joinUrl) {
+    await ctx.reply('تنظیمات عضویت کانال کامل نیست. لطفاً بعداً دوباره تلاش کن.');
+    return false;
+  }
+
+  try {
+    const member = await bot.telegram.getChatMember(chatId, ctx.from.id);
+    const isMember = ['creator', 'administrator', 'member'].includes(member.status)
+      || (member.status === 'restricted' && member.is_member);
+
+    if (isMember) return true;
+  } catch (error) {
+    console.error('Required channel membership check failed:', error);
+  }
+
+  await ctx.reply(
+    'برای خرید کانفیگ ابتدا عضو کانال زیر شو، سپس دوباره گزینهٔ خرید را انتخاب کن.',
+    Markup.inlineKeyboard([[Markup.button.url('📢 عضویت در کانال', REQUIRED_CHANNEL.joinUrl)]]),
+  );
+  return false;
 }
 
 function clearPurchase(ctx) {
@@ -255,15 +333,18 @@ async function showUsernameOptions(ctx) {
       buttons.push([Markup.button.callback(`🔄 ${profile.xui_email}${defaultLabel}`, `profile_use_${profile.xui_email}`)]);
     }
 
-    buttons.push([Markup.button.callback('➕ ساخت Username جدید', 'username_new')]);
+    if (canCreateNewUsername(ctx.from.id)) {
+      buttons.push([Markup.button.callback('➕ ساخت Username جدید', 'username_new')]);
+    }
 
     await ctx.reply(
       `👤 انتخاب Username سرویس\n\n` +
         `می‌توانی از یکی از Usernameهای قبلی استفاده کنی یا یک Username جدید بسازی.\n\n` +
         `🔄 استفاده از Username قبلی:\n` +
         `لینک قبلی حفظ می‌شود و حجم و اعتبار آن با سرویس جدید جایگزین می‌شود.\n\n` +
-        `🆕 ساخت Username جدید:\n` +
-        `یک سرویس مستقل با لینک جدید ساخته می‌شود.\n\n` +
+        (canCreateNewUsername(ctx.from.id)
+          ? `🆕 ساخت Username جدید:\nیک سرویس مستقل با لینک جدید ساخته می‌شود.\n\n`
+          : `به سقف ${MAX_SERVICE_PROFILES} Username رسیده‌ای و باید یکی از موارد بالا را انتخاب کنی.\n\n`) +
         `Username موردنظر را انتخاب کن:`,
       Markup.inlineKeyboard(buttons),
     );
@@ -288,6 +369,10 @@ async function showNewUsernameOptions(ctx) {
 
   if (!purchase) {
     return ctx.reply('فرایند خرید پیدا نشد.');
+  }
+
+  if (!canCreateNewUsername(ctx.from.id)) {
+    return ctx.reply(`حداکثر ${MAX_SERVICE_PROFILES} Username یکتا می‌توانی داشته باشی. یکی از Usernameهای قبلی را انتخاب کن.`);
   }
 
   purchase.step = 'new_username';
@@ -331,8 +416,7 @@ async function showInvoice(ctx) {
   purchase.step = 'confirm';
 
   const extraPrice = getPriceExtra(purchase.limitIp);
-
-  const finalPrice = calculateProductPrice(product.price, purchase.limitIp);
+  const pricing = getPurchasePricing(purchase, product);
 
   const usernameType = purchase.profileInboundId ? 'استفاده از Username قبلی' : 'ساخت سرویس جدید';
 
@@ -346,12 +430,15 @@ async function showInvoice(ctx) {
       `🔧 نوع خرید: ${usernameType}\n\n` +
       `💵 قیمت پایه: ${formatPrice(product.price)}\n` +
       `👥 هزینه تعداد کاربران: ${formatPrice(extraPrice)}\n` +
-      `💰 مبلغ قابل پرداخت: ${formatPrice(finalPrice)}\n\n` +
+      (pricing.discount
+        ? `🎟 کد تخفیف: ${pricing.discount.code}\n💸 تخفیف: ${formatPrice(pricing.discount.amount)}\n💰 مبلغ قابل پرداخت: ${formatPrice(pricing.finalPrice)}\n\n`
+        : `💰 مبلغ قابل پرداخت: ${formatPrice(pricing.finalPrice)}\n\n`) +
       `توجه: با فعال‌سازی خرید روی Username قبلی، حجم و اعتبار قبلی حذف و سرویس جدید جایگزین می‌شود.\n\n` +
       `اطلاعات را بررسی و سفارش را ثبت کن.`,
     Markup.inlineKeyboard([
       [Markup.button.callback(' تأیید و ثبت سفارش', 'confirm_order')],
       [Markup.button.callback('🔄 تغییر نام کاربـری ', 'change_username')],
+      [Markup.button.callback(pricing.discount ? '🗑 حذف کد تخفیف' : '🎟 وارد کردن کد تخفیف', pricing.discount ? 'remove_discount' : 'enter_discount')],
       [backButton('لغو خرید', 'cancel_purchase')],
     ]),
   );
@@ -409,21 +496,24 @@ async function sendLink(chatId, title, url, copyButtonText) {
   });
 }
 
+async function sendSubscriptionLink(chatId, subscriptionUrl) {
+  if (!subscriptionUrl || typeof subscriptionUrl !== 'string') {
+    throw new Error('Subscription URL is empty or invalid');
+  }
+
+  await bot.telegram.sendMessage(chatId, `${texts.delivery.subscriptionTitle}\n${subscriptionUrl}`, {
+    reply_markup: Markup.inlineKeyboard([
+      [{ text: '📋 کپی لینک اشتراک', copy_text: { text: subscriptionUrl } }],
+      [Markup.button.url('➕ افزودن مستقیم به V2Box', getV2BoxSubscriptionInstallUrl(subscriptionUrl))],
+    ]).reply_markup,
+  });
+}
+
 async function sendQrCode(chatId, url) {
   const qrCode = await QRCode.toBuffer(url, { errorCorrectionLevel: 'M', margin: 1, width: 700 });
 
   await bot.telegram.sendPhoto(chatId, { source: qrCode }, {
     caption: '📷 QR Code لینک اشتراک\nآن را در V2Box اسکن کن تا حجم و تاریخ انقضا نمایش داده شود.',
-  });
-}
-
-async function sendTutorialVideo(chatId) {
-  const videoPath = getTutorialVideoPath();
-
-  if (!videoPath) return;
-
-  await bot.telegram.sendVideo(chatId, { source: videoPath }, {
-    caption: '🎬 آموزش اتصال با V2Box',
   });
 }
 
@@ -519,9 +609,8 @@ async function createAndDeliverService(orderId, adminCtx) {
       await bot.telegram.sendMessage(order.telegram_user_id, userMessage);
 
       await sendLink(order.telegram_user_id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
-      await sendLink(order.telegram_user_id, texts.delivery.subscriptionTitle, result.subscriptionUrl, '📋 کپی خودکار لینک اشتراک');
+      await sendSubscriptionLink(order.telegram_user_id, result.subscriptionUrl);
       await sendQrCode(order.telegram_user_id, result.subscriptionUrl);
-      await sendTutorialVideo(order.telegram_user_id);
     } catch (deliveryError) {
       console.error('Service created, but Telegram delivery failed:', deliveryError);
 
@@ -573,7 +662,9 @@ function registerMenuHandler(id, handler) {
   if (label) bot.hears(label, handler);
 }
 
-registerMenuHandler('buy', async (ctx) => showProductSelector(ctx));
+registerMenuHandler('buy', async (ctx) => {
+  if (await ensureRequiredChannelMembership(ctx)) await showProductSelector(ctx);
+});
 registerMenuHandler('inquiry', async (ctx) => {
   ctx.session.inquiry = true;
   await ctx.reply(texts.start.inquiry, mainMenu());
@@ -589,6 +680,17 @@ registerMenuHandler('services', async (ctx) => {
   await ctx.reply(list.join('\n\n'), mainMenu());
 });
 registerMenuHandler('orders', async (ctx) => showMyOrders(ctx));
+registerMenuHandler('tutorials', async (ctx) => {
+  const tutorials = CONNECTION_TUTORIALS.filter((item) => item.enabled !== false && item.url);
+
+  if (!tutorials.length) return ctx.reply('آموزش اتصال به‌زودی اضافه می‌شود.', mainMenu());
+
+  await ctx.reply(
+    '🎬 آموزش اتصال\n\nویدیوی موردنظرت را انتخاب کن:',
+    Markup.inlineKeyboard(tutorials.map((item) => [Markup.button.url(item.title, item.url)])),
+  );
+});
+registerMenuHandler('support', async (ctx) => startSupport(ctx));
 registerMenuHandler('trial', async (ctx) => claimTrial(ctx));
 
 bot.action('inquiry', async (ctx) => {
@@ -630,7 +732,7 @@ async function claimTrial(ctx) {
 
     await ctx.reply(`🎁 اکانت تست فعال شد.\n\n📦 حجم: ${TRIAL_ACCOUNT.trafficLabel}\n⏳ اعتبار: ${TRIAL_ACCOUNT.durationDays} روز\n👤 نام کاربری: ${result.email}`);
     await sendLink(ctx.from.id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
-    await sendLink(ctx.from.id, texts.delivery.subscriptionTitle, result.subscriptionUrl, '📋 کپی خودکار لینک اشتراک');
+    await sendSubscriptionLink(ctx.from.id, result.subscriptionUrl);
     await sendQrCode(ctx.from.id, result.subscriptionUrl);
     await ctx.reply('برای مشاهدهٔ حجم و زمان باقی‌مانده لینک اشتراک را اضافه کن.', mainMenu());
   } catch (error) {
@@ -673,7 +775,7 @@ async function showProductSelector(ctx) {
 
 bot.action('show_products', async (ctx) => {
   await ctx.answerCbQuery();
-  await showProductSelector(ctx);
+  if (await ensureRequiredChannelMembership(ctx)) await showProductSelector(ctx);
 });
 
 bot.action(/^country_([A-Z]{2,8})$/, async (ctx) => {
@@ -750,6 +852,7 @@ bot.action(/^select_plan_(\d+)$/, async (ctx) => {
   }
 
   purchase.productId = product.id;
+  delete purchase.discountCode;
   purchase.step = 'limit';
 
   await ctx.reply(
@@ -826,6 +929,10 @@ bot.action('username_new', async (ctx) => {
     return ctx.reply('فرایند خرید پیدا نشد.');
   }
 
+  if (!canCreateNewUsername(ctx.from.id)) {
+    return ctx.reply(`حداکثر ${MAX_SERVICE_PROFILES} Username یکتا مجاز است. یکی از Usernameهای قبلی را انتخاب کن.`);
+  }
+
   await showNewUsernameOptions(ctx);
 });
 
@@ -846,6 +953,10 @@ bot.action('username_auto', async (ctx) => {
 
   if (!purchase || !['choose_username', 'new_username', 'username'].includes(purchase.step)) {
     return ctx.reply('مرحله انتخاب Username معتبر نیست.');
+  }
+
+  if (!purchase.profileInboundId && !canCreateNewUsername(ctx.from.id)) {
+    return ctx.reply(`حداکثر ${MAX_SERVICE_PROFILES} Username یکتا مجاز است. یکی از Usernameهای قبلی را انتخاب کن.`);
   }
 
   let username;
@@ -871,14 +982,73 @@ bot.action('username_custom', async (ctx) => {
     return ctx.reply('مرحله انتخاب Username معتبر نیست.');
   }
 
+  if (!purchase.profileInboundId && !canCreateNewUsername(ctx.from.id)) {
+    return ctx.reply(`حداکثر ${MAX_SERVICE_PROFILES} Username یکتا مجاز است. یکی از Usernameهای قبلی را انتخاب کن.`);
+  }
+
   purchase.step = 'awaiting_username';
 
   await ctx.reply(texts.username.prompt);
 });
 
+bot.action('enter_discount', async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const purchase = ctx.session?.purchase;
+  if (!purchase || purchase.step !== 'confirm') {
+    return ctx.reply('مرحلهٔ ثبت تخفیف معتبر نیست.');
+  }
+
+  purchase.step = 'awaiting_discount_code';
+  await ctx.reply('🎟 کد تخفیف را ارسال کن یا /cancel را بزن.');
+});
+
+bot.action('remove_discount', async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const purchase = ctx.session?.purchase;
+  if (!purchase || !purchase.productId) return ctx.reply('فرایند خرید پیدا نشد.');
+
+  delete purchase.discountCode;
+  await showInvoice(ctx);
+});
+
 bot.on('text', async (ctx, next) => {
   const keyboardPurchase = ctx.session?.purchase;
   const text = ctx.message.text.trim();
+
+  if (ctx.session?.support) {
+    if (text.startsWith('/')) return next();
+
+    const supportChatId = String(SUPPORT.chatId || '').trim();
+    if (!supportChatId) {
+      return ctx.reply('تنظیمات دریافت پیام پشتیبانی کامل نیست. لطفاً مستقیم با پشتیبانی ارتباط بگیر.');
+    }
+
+    try {
+      await bot.telegram.forwardMessage(supportChatId, ctx.chat.id, ctx.message.message_id);
+      delete ctx.session.support;
+      return ctx.reply('✅ پیامت برای پشتیبانی ارسال شد. به‌زودی پاسخ می‌دهیم.', mainMenu());
+    } catch (error) {
+      console.error('Support message forwarding failed:', error);
+      return ctx.reply('ارسال پیام به پشتیبانی انجام نشد. لطفاً دوباره تلاش کن یا مستقیم پیام بده.');
+    }
+  }
+
+  if (keyboardPurchase?.step === 'awaiting_discount_code') {
+    const product = getProduct(keyboardPurchase.productId);
+    const pricing = product
+      ? getPurchasePricing({ ...keyboardPurchase, discountCode: text }, product)
+      : null;
+
+    if (!pricing?.discount) {
+      return ctx.reply('این کد تخفیف معتبر نیست یا برای پلن انتخاب‌شده فعال نیست. دوباره وارد کن یا /cancel را بزن.');
+    }
+
+    keyboardPurchase.discountCode = pricing.discount.code;
+    return showInvoice(ctx);
+  }
+
   if (keyboardPurchase?.step === 'keyboard_country') {
     if (text === '🔙 بازگشت به منوی اصلی') {
       clearPurchase(ctx);
@@ -915,6 +1085,7 @@ bot.on('text', async (ctx, next) => {
     const product = getPurchasableProducts().find((item) => item.country === keyboardPurchase.country && item.months === keyboardPurchase.months && `${item.trafficLabel} | ${formatPrice(item.price)}` === text);
     if (product) {
       keyboardPurchase.productId = product.id;
+      delete keyboardPurchase.discountCode;
       keyboardPurchase.step = 'limit';
       return ctx.reply('👥 تعداد کاربران مجاز هم‌زمان را انتخاب کن:', fullWidthKeyboard([
         ...USER_LIMIT_OPTIONS.map((item) => item.label), '🔙 بازگشت به انتخاب حجم',
@@ -969,6 +1140,10 @@ bot.on('text', async (ctx, next) => {
     return next();
   }
 
+  if (!canCreateNewUsername(ctx.from.id)) {
+    return ctx.reply(`حداکثر ${MAX_SERVICE_PROFILES} Username یکتا مجاز است. یکی از Usernameهای قبلی را انتخاب کن.`);
+  }
+
   const username = ctx.message.text.trim();
 
   if (username.startsWith('/')) {
@@ -1018,6 +1193,10 @@ bot.action('confirm_order', async (ctx) => {
     return ctx.answerCbQuery('اطلاعات سفارش ناقص است.', { show_alert: true });
   }
 
+  if (!(await ensureRequiredChannelMembership(ctx))) {
+    return ctx.answerCbQuery('ابتدا عضو کانال شو.', { show_alert: true });
+  }
+
   const product = getProduct(purchase.productId);
 
   if (!product) {
@@ -1040,6 +1219,8 @@ bot.action('confirm_order', async (ctx) => {
     }
   } else if (isUsernameTaken(purchase.username)) {
     return ctx.answerCbQuery('این Username قبلاً استفاده شده است. آن را از فهرست Usernameهای قبلی انتخاب کن.', { show_alert: true });
+  } else if (!canCreateNewUsername(ctx.from.id)) {
+    return ctx.answerCbQuery(`حداکثر ${MAX_SERVICE_PROFILES} Username یکتا مجاز است.`, { show_alert: true });
   }
 
   const selectedInboundId = profile?.inbound_id ? Number(profile.inbound_id) : Number(product.inboundId);
@@ -1047,12 +1228,11 @@ bot.action('confirm_order', async (ctx) => {
   const serverProduct = profile?.inbound_id ? getProductByInbound(profile.inbound_id) : null;
 
   const extraPrice = getPriceExtra(purchase.limitIp);
-
-  const finalPrice = calculateProductPrice(product.price, purchase.limitIp);
+  const pricing = getPurchasePricing(purchase, product);
 
   const orderProduct = {
     ...product,
-    price: finalPrice,
+    price: pricing.finalPrice,
     basePrice: Number(product.price),
     extraPrice,
     inboundId: selectedInboundId,
@@ -1394,20 +1574,37 @@ bot.action('main_menu', async (ctx) => {
 
   clearPurchase(ctx);
   delete ctx.session.inquiry;
+  delete ctx.session.support;
 
   await ctx.reply('منوی اصلی:', mainMenu());
 });
 
+async function startSupport(ctx) {
+  ctx.session.support = true;
+
+  await ctx.reply(
+    `دوست عزیز سلام، امیدوارم که عالی باشی ❤️\n\n` +
+      `🔰 پشتیبانی مستر سرور از ساعت ۹ صبح تا ۱۲ شب در خدمت شماست جهت پاسخگویی به سوالات و چالش‌های شما عزیزان.\n\n` +
+      `🔰 هم می‌تونی پیامت رو همین‌جا از طریق ربات برای ما ارسال کنی تا پاسخگو باشیم.\n\n` +
+      `🛑 برای پاسخگویی سریع‌تر بهتر است به آیدی رسمی پشتیبانی مسترسرور پیام بدهی تا مستقیم در پیوی پشتیبانی شوی.\n` +
+      `🆔 @MRSERVER_SELLER\n\n` +
+      `✍️ پیام خود را ارسال کن یا با دکمهٔ «❌ انصراف» بازگرد.`,
+    Markup.inlineKeyboard([
+      [Markup.button.url('💬 پیام مستقیم به پشتیبانی', SUPPORT.directUrl)],
+      [Markup.button.callback('❌ انصراف', 'support_cancel')],
+    ]),
+  );
+}
+
 bot.action('support', async (ctx) => {
   await ctx.answerCbQuery();
+  await startSupport(ctx);
+});
 
-  const username = (process.env.SUPPORT_USERNAME || '').replace(/^@/, '');
-
-  if (!username) {
-    return ctx.reply('اطلاعات پشتیبانی تنظیم نشده است.');
-  }
-
-  await ctx.reply(`📞 پشتیبانی: @${username}`, Markup.inlineKeyboard([[Markup.button.url('ارتباط با پشتیبانی', `https://t.me/${username}`)]]));
+bot.action('support_cancel', async (ctx) => {
+  await ctx.answerCbQuery();
+  delete ctx.session.support;
+  await ctx.reply('پشتیبانی لغو شد.', mainMenu());
 });
 
 // --------------------------------------------------

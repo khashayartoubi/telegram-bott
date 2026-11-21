@@ -6,8 +6,36 @@ const START_MENU = [
   { id: 'wallet', label: '👛 کیف پول', action: 'wallet', enabled: true },
   { id: 'services', label: '🖥 سرویس‌های من', action: 'my_services', enabled: true },
   { id: 'orders', label: '🧾 سفارش‌های من', action: 'my_orders', enabled: true },
+  { id: 'tutorials', label: '🎬 آموزش اتصال', action: 'connection_tutorials', enabled: true },
+  { id: 'support', label: '💬 پشتیبانی', action: 'support', enabled: true },
   { id: 'trial', label: '🎁 اکانت تست رایگان', action: 'claim_trial', style: 'success', enabled: true },
 ];
+
+// کدهای تخفیف: amount مبلغِ تومان و percent درصد تخفیف است.
+// productIds خالی یعنی کد روی همهٔ پلن‌ها فعال است. شناسهٔ هر پلن در catalog.js است.
+const DISCOUNT_CODES = [
+  // { code: 'WELCOME10', type: 'percent', value: 10, productIds: [], enabled: true },
+  // { code: 'NL50000', type: 'amount', value: 50_000, productIds: [21, 22], enabled: true },
+];
+
+// لینک ویدیوی آموزش را وارد و enabled را true کن؛ هر تعداد مورد می‌توانی اضافه کنی.
+const CONNECTION_TUTORIALS = [
+  // { title: '🎬 آموزش اتصال با V2Box', url: 'https://example.com/v2box-video', enabled: true },
+  // { title: '🎬 آموزش اتصال با HAPP', url: 'https://example.com/happ-video', enabled: true },
+];
+
+const REQUIRED_CHANNEL = {
+  enabled: true,
+  chatId: process.env.REQUIRED_CHANNEL_ID,
+  joinUrl: 'https://t.me/+9AIDlPT1CmBkNmRk',
+};
+
+const SUPPORT = {
+  chatId: process.env.SUPPORT_CHAT_ID,
+  directUrl: 'https://t.me/MRSERVER_SELLER',
+};
+
+const MAX_SERVICE_PROFILES = 3;
 
 const TRIAL_ACCOUNT = {
   enabled: true,
@@ -23,4 +51,12 @@ const TRIAL_ACCOUNT = {
   usernamePrefix: 'trial',
 };
 
-module.exports = { START_MENU, TRIAL_ACCOUNT };
+module.exports = {
+  START_MENU,
+  TRIAL_ACCOUNT,
+  DISCOUNT_CODES,
+  CONNECTION_TUTORIALS,
+  REQUIRED_CHANNEL,
+  SUPPORT,
+  MAX_SERVICE_PROFILES,
+};
