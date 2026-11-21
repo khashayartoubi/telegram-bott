@@ -791,11 +791,16 @@ async function showProductSelector(ctx) {
     ).values(),
   ];
 
-  ctx.session.purchase = { step: 'keyboard_country' };
-  await ctx.reply('🌍 لوکیشن موردنظرت رو انتخاب کن:', fullWidthKeyboard([
-    ...countries.map((country) => `${country.flag} ${country.name}`),
-    '🔙 بازگشت به منوی اصلی',
-  ]));
+  ctx.session.purchase = { step: 'country' };
+  await ctx.reply(
+    '🌍 لوکیشن موردنظرت رو انتخاب کن:',
+    Markup.inlineKeyboard([
+      ...countries.map((country) => [
+        Markup.button.callback(`${country.flag} ${country.name}`, `country_${country.code}`),
+      ]),
+      [backButton('🔙 بازگشت به منوی اصلی')],
+    ]),
+  );
 }
 
 bot.action('show_products', async (ctx) => {
