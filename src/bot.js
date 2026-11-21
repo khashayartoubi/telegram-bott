@@ -174,6 +174,13 @@ function getV2BoxSubscriptionInstallUrl(subscriptionUrl) {
   return `v2box://install-sub?url=${encodeURIComponent(subscriptionUrl)}`;
 }
 
+function getSubscriptionUrl(subId) {
+  const baseUrl = String(process.env.XUI_SUBSCRIPTION_BASE_URL || '').trim();
+  if (!baseUrl || !subId) throw new Error('Subscription URL configuration is missing');
+
+  return new URL(String(subId), `${baseUrl.replace(/\/+$/, '')}/`).toString();
+}
+
 async function ensureRequiredChannelMembership(ctx) {
   if (!REQUIRED_CHANNEL.enabled) return true;
 
@@ -501,12 +508,19 @@ async function sendSubscriptionLink(chatId, subscriptionUrl) {
     throw new Error('Subscription URL is empty or invalid');
   }
 
-  await bot.telegram.sendMessage(chatId, `${texts.delivery.subscriptionTitle}\n${subscriptionUrl}`, {
+  const v2BoxInstallUrl = getV2BoxSubscriptionInstallUrl(subscriptionUrl);
+
+  await bot.telegram.sendMessage(
+    chatId,
+    `${texts.delivery.subscriptionTitle}\n${subscriptionUrl}\n\n` +
+      `➕ لینک افزودن مستقیم در V2Box:\n${v2BoxInstallUrl}`,
+    {
     reply_markup: Markup.inlineKeyboard([
       [{ text: '📋 کپی لینک اشتراک', copy_text: { text: subscriptionUrl } }],
-      [Markup.button.url('➕ افزودن مستقیم به V2Box', getV2BoxSubscriptionInstallUrl(subscriptionUrl))],
+      [{ text: '📋 کپی لینک افزودن در V2Box', copy_text: { text: v2BoxInstallUrl } }],
     ]).reply_markup,
-  });
+    },
+  );
 }
 
 async function sendQrCode(chatId, url) {
@@ -708,7 +722,19 @@ async function claimTrial(ctx) {
   if (!TRIAL_ACCOUNT.enabled) return ctx.reply('اکانت تست فعلاً غیرفعال است.', mainMenu());
 
   const existing = getTrialAccount(ctx.from.id, TRIAL_ACCOUNT.campaignId);
-  if (existing) return ctx.reply('اکانت تست قبلاً برای این حساب دریافت شده است.', mainMenu());
+  if (existing) {
+    try {
+      const subscriptionUrl = getSubscriptionUrl(existing.sub_id);
+      await ctx.reply('اکانت تست قبلاً برای این حساب فعال شده است. لینک اشتراک دوباره ارسال شد.');
+      await sendSubscriptionLink(ctx.from.id, subscriptionUrl);
+      await sendQrCode(ctx.from.id, subscriptionUrl);
+    } catch (error) {
+      console.error('Trial link resend failed:', error);
+      await ctx.reply('اکانت تست قبلاً دریافت شده است، اما ارسال دوبارهٔ لینک انجام نشد.');
+    }
+
+    return ctx.reply('برای مشاهدهٔ حجم و زمان باقی‌مانده لینک اشتراک را اضافه کن.', mainMenu());
+  }
 
   const country = COUNTRIES.find((item) => item.code === TRIAL_ACCOUNT.countryCode);
   if (!country || !Number.isInteger(country.inboundId) || country.inboundId <= 0) {
@@ -728,12 +754,11 @@ async function claimTrial(ctx) {
       countryCode: country.code,
     });
 
-    saveTrialAccount({ userId: ctx.from.id, username: result.email, subId: result.subId, inboundId: result.inboundId, campaignId: TRIAL_ACCOUNT.campaignId });
-
     await ctx.reply(`🎁 اکانت تست فعال شد.\n\n📦 حجم: ${TRIAL_ACCOUNT.trafficLabel}\n⏳ اعتبار: ${TRIAL_ACCOUNT.durationDays} روز\n👤 نام کاربری: ${result.email}`);
     await sendLink(ctx.from.id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
     await sendSubscriptionLink(ctx.from.id, result.subscriptionUrl);
     await sendQrCode(ctx.from.id, result.subscriptionUrl);
+    saveTrialAccount({ userId: ctx.from.id, username: result.email, subId: result.subId, inboundId: result.inboundId, campaignId: TRIAL_ACCOUNT.campaignId });
     await ctx.reply('برای مشاهدهٔ حجم و زمان باقی‌مانده لینک اشتراک را اضافه کن.', mainMenu());
   } catch (error) {
     console.error('Trial provisioning failed:', error);

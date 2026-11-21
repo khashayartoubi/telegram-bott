@@ -1,5 +1,10 @@
 // همهٔ گزینه‌های صفحهٔ شروع از اینجا کنترل می‌شوند.
 // برای پنهان کردن یک گزینه، enabled را false کن؛ ترتیب آرایه همان ترتیب منو است.
+function optionalTelegramChatId(value) {
+  const chatId = String(value || '').trim();
+  return /^-?\d+$/.test(chatId) ? chatId : '';
+}
+
 const START_MENU = [
   { id: 'buy', label: '🛒 خرید کانفیگ', action: 'show_products', style: 'primary', enabled: true },
   { id: 'inquiry', label: '🔎 استعلام', action: 'inquiry', enabled: true },
@@ -25,14 +30,15 @@ const CONNECTION_TUTORIALS = [
 ];
 
 const REQUIRED_CHANNEL = {
-  // اگر شناسه تنظیم نشود، بررسی عضویت کانال غیرفعال است.
-  enabled: Boolean(process.env.REQUIRED_CHANNEL_ID),
-  chatId: process.env.REQUIRED_CHANNEL_ID,
+  // اگر شناسه تنظیم نشود یا معتبر نباشد، بررسی عضویت کانال غیرفعال است.
+  chatId: optionalTelegramChatId(process.env.REQUIRED_CHANNEL_ID),
   joinUrl: 'https://t.me/+9AIDlPT1CmBkNmRk',
 };
+REQUIRED_CHANNEL.enabled = Boolean(REQUIRED_CHANNEL.chatId);
 
 const SUPPORT = {
-  chatId: process.env.SUPPORT_CHAT_ID,
+  // مقدار خالی یا نمونهٔ -100...، ارسال داخلی را غیرفعال می‌کند.
+  chatId: optionalTelegramChatId(process.env.SUPPORT_CHAT_ID),
   directUrl: 'https://t.me/MRSERVER_SELLER',
 };
 
