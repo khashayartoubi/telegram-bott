@@ -1,7 +1,6 @@
 require('dotenv').config();
 
 const crypto = require('crypto');
-const QRCode = require('qrcode');
 const { Telegraf, Markup, session } = require('telegraf');
 
 const products = require('./config/catalog');
@@ -512,8 +511,7 @@ async function sendSubscriptionLink(chatId, subscriptionUrl) {
 
   await bot.telegram.sendMessage(
     chatId,
-    `${texts.delivery.subscriptionTitle}\n${subscriptionUrl}\n\n` +
-      `➕ لینک افزودن مستقیم در V2Box:\n${v2BoxInstallUrl}`,
+    `➕ لینک افزودن Subscription در V2Box:\n${v2BoxInstallUrl}`,
     {
     reply_markup: Markup.inlineKeyboard([
       [{ text: '📋 کپی لینک اشتراک', copy_text: { text: subscriptionUrl } }],
@@ -521,14 +519,6 @@ async function sendSubscriptionLink(chatId, subscriptionUrl) {
     ]).reply_markup,
     },
   );
-}
-
-async function sendQrCode(chatId, url) {
-  const qrCode = await QRCode.toBuffer(url, { errorCorrectionLevel: 'M', margin: 1, width: 700 });
-
-  await bot.telegram.sendPhoto(chatId, { source: qrCode }, {
-    caption: '📷 QR Code لینک اشتراک\nآن را در V2Box اسکن کن تا حجم و تاریخ انقضا نمایش داده شود.',
-  });
 }
 
 // --------------------------------------------------
@@ -624,7 +614,6 @@ async function createAndDeliverService(orderId, adminCtx) {
 
       await sendLink(order.telegram_user_id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
       await sendSubscriptionLink(order.telegram_user_id, result.subscriptionUrl);
-      await sendQrCode(order.telegram_user_id, result.subscriptionUrl);
     } catch (deliveryError) {
       console.error('Service created, but Telegram delivery failed:', deliveryError);
 
@@ -727,7 +716,6 @@ async function claimTrial(ctx) {
       const subscriptionUrl = getSubscriptionUrl(existing.sub_id);
       await ctx.reply('اکانت تست قبلاً برای این حساب فعال شده است. لینک اشتراک دوباره ارسال شد.');
       await sendSubscriptionLink(ctx.from.id, subscriptionUrl);
-      await sendQrCode(ctx.from.id, subscriptionUrl);
     } catch (error) {
       console.error('Trial link resend failed:', error);
       await ctx.reply('اکانت تست قبلاً دریافت شده است، اما ارسال دوبارهٔ لینک انجام نشد.');
@@ -757,7 +745,6 @@ async function claimTrial(ctx) {
     await ctx.reply(`🎁 اکانت تست فعال شد.\n\n📦 حجم: ${TRIAL_ACCOUNT.trafficLabel}\n⏳ اعتبار: ${TRIAL_ACCOUNT.durationDays} روز\n👤 نام کاربری: ${result.email}`);
     await sendLink(ctx.from.id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
     await sendSubscriptionLink(ctx.from.id, result.subscriptionUrl);
-    await sendQrCode(ctx.from.id, result.subscriptionUrl);
     saveTrialAccount({ userId: ctx.from.id, username: result.email, subId: result.subId, inboundId: result.inboundId, campaignId: TRIAL_ACCOUNT.campaignId });
     await ctx.reply('برای مشاهدهٔ حجم و زمان باقی‌مانده لینک اشتراک را اضافه کن.', mainMenu());
   } catch (error) {
