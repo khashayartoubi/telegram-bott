@@ -175,10 +175,6 @@ function getPurchasePricing(purchase, product) {
   };
 }
 
-function getV2BoxSubscriptionInstallUrl(subscriptionUrl) {
-  return `v2box://install-sub?url=${encodeURIComponent(subscriptionUrl)}`;
-}
-
 function canCreateNewUsername(userId) {
   return getUserProfiles(userId).length < MAX_SERVICE_PROFILES;
 }
@@ -506,14 +502,12 @@ async function sendLink(chatId, title, url, copyButtonText) {
 }
 
 async function sendSubscriptionAddLink(chatId, subscriptionUrl) {
-  const v2BoxInstallUrl = getV2BoxSubscriptionInstallUrl(subscriptionUrl);
-
   await bot.telegram.sendMessage(
     chatId,
-    `➕ لینک افزودن Subscription در V2Box:\n${v2BoxInstallUrl}`,
+    `➕ لینک Subscription برای افزودن در V2Box:\n${subscriptionUrl}`,
     {
       reply_markup: Markup.inlineKeyboard([
-        [{ text: '📋 کپی لینک افزودن در V2Box', copy_text: { text: v2BoxInstallUrl } }],
+        [{ text: '📋 کپی لینک Subscription', copy_text: { text: subscriptionUrl } }],
       ]).reply_markup,
     },
   );
