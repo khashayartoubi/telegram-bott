@@ -632,7 +632,7 @@ async function claimTrial(ctx) {
     await sendLink(ctx.from.id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
     await sendLink(ctx.from.id, texts.delivery.subscriptionTitle, result.subscriptionUrl, '📋 کپی خودکار لینک اشتراک');
     await sendQrCode(ctx.from.id, result.subscriptionUrl);
-    await ctx.reply('برای مشاهدهٔ حجم و زمان باقی‌مانده در V2Box، لینک اشتراک را اضافه کن.', mainMenu());
+    await ctx.reply('برای مشاهدهٔ حجم و زمان باقی‌مانده لینک اشتراک را اضافه کن.', mainMenu());
   } catch (error) {
     console.error('Trial provisioning failed:', error);
     await ctx.reply('ساخت اکانت تست انجام نشد؛ چند دقیقهٔ دیگر دوباره تلاش کن.', mainMenu());
