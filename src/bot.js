@@ -1022,7 +1022,11 @@ bot.on('text', async (ctx, next) => {
 
     const supportChatId = String(SUPPORT.chatId || '').trim();
     if (!supportChatId) {
-      return ctx.reply('تنظیمات دریافت پیام پشتیبانی کامل نیست. لطفاً مستقیم با پشتیبانی ارتباط بگیر.');
+      delete ctx.session.support;
+      return ctx.reply(
+        'ارسال پیام از داخل ربات فعلاً فعال نیست. لطفاً مستقیم با پشتیبانی ارتباط بگیر.',
+        Markup.inlineKeyboard([[Markup.button.url('💬 پیام مستقیم به پشتیبانی', SUPPORT.directUrl)]]),
+      );
     }
 
     try {

@@ -25,7 +25,8 @@ const CONNECTION_TUTORIALS = [
 ];
 
 const REQUIRED_CHANNEL = {
-  enabled: true,
+  // اگر شناسه تنظیم نشود، بررسی عضویت کانال غیرفعال است.
+  enabled: Boolean(process.env.REQUIRED_CHANNEL_ID),
   chatId: process.env.REQUIRED_CHANNEL_ID,
   joinUrl: 'https://t.me/+9AIDlPT1CmBkNmRk',
 };
