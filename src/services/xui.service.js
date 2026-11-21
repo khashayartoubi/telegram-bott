@@ -2,12 +2,21 @@ const crypto = require('crypto');
 
 const BASE_URL = process.env.XUI_BASE_URL;
 const API_TOKEN = process.env.XUI_API_TOKEN;
+const SUBSCRIPTION_BASE_URL = process.env.XUI_SUBSCRIPTION_BASE_URL;
 
-if (!BASE_URL || !API_TOKEN) {
+if (!BASE_URL || !API_TOKEN || !SUBSCRIPTION_BASE_URL) {
   throw new Error('Missing 3x-ui environment variables');
 }
 
 const baseUrl = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
+
+function getSubscriptionBaseUrl() {
+  try {
+    return new URL(`${SUBSCRIPTION_BASE_URL.replace(/\/+$/, '')}/`);
+  } catch {
+    throw new Error('XUI_SUBSCRIPTION_BASE_URL is invalid');
+  }
+}
 
 function createClientRemark(countryCode, username) {
   return `${String(countryCode || 'VPN').toUpperCase()}-${username}`;
@@ -291,12 +300,15 @@ async function provisionClient(options) {
     throw new Error('Client was saved, but the VLESS link could not be retrieved.');
   }
 
+  const subscriptionUrl = new URL(effectiveSubId, getSubscriptionBaseUrl()).toString();
+
   return {
     email: options.email,
     uuid: result.client.id,
     subId: effectiveSubId,
     inboundId: result.inboundId,
     vlessUrl: withRemark(vlessUrl, createClientRemark(options.countryCode, options.email)),
+    subscriptionUrl,
     expiryTime: result.client.expiryTime,
     updatedExistingClient: result.isExisting,
   };

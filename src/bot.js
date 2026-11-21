@@ -80,10 +80,20 @@ function backButton(text = '🔙 بازگشت', action = 'main_menu') {
 }
 
 function mainMenu() {
-  // Reply keyboard is rendered at the full width of the chat by Telegram.
-  return Markup.keyboard(
-    START_MENU.filter((item) => item.enabled).map((item) => [{ text: item.label, ...(item.style ? { style: item.style } : {}) }]),
-  ).resize();
+  const items = START_MENU.filter((item) => item.enabled);
+  const toButton = (item) => ({ text: item.label, ...(item.style ? { style: item.style } : {}) });
+
+  if (items.length <= 2) return Markup.keyboard(items.map((item) => [toButton(item)])).resize();
+
+  const first = items[0];
+  const last = items.at(-1);
+  const middleRows = [];
+
+  for (let index = 1; index < items.length - 1; index += 2) {
+    middleRows.push(items.slice(index, index + 2).map(toButton));
+  }
+
+  return Markup.keyboard([[toButton(first)], ...middleRows, [toButton(last)]]).resize();
 }
 
 function fullWidthKeyboard(labels) {
@@ -163,6 +173,10 @@ function getPurchasePricing(purchase, product) {
     discount,
     finalPrice: beforeDiscount - (discount?.amount || 0),
   };
+}
+
+function getV2BoxSubscriptionInstallUrl(subscriptionUrl) {
+  return `v2box://install-sub?url=${encodeURIComponent(subscriptionUrl)}`;
 }
 
 function canCreateNewUsername(userId) {
@@ -491,6 +505,20 @@ async function sendLink(chatId, title, url, copyButtonText) {
   });
 }
 
+async function sendSubscriptionAddLink(chatId, subscriptionUrl) {
+  const v2BoxInstallUrl = getV2BoxSubscriptionInstallUrl(subscriptionUrl);
+
+  await bot.telegram.sendMessage(
+    chatId,
+    `➕ لینک افزودن Subscription در V2Box:\n${v2BoxInstallUrl}`,
+    {
+      reply_markup: Markup.inlineKeyboard([
+        [{ text: '📋 کپی لینک افزودن در V2Box', copy_text: { text: v2BoxInstallUrl } }],
+      ]).reply_markup,
+    },
+  );
+}
+
 // --------------------------------------------------
 // Provision service
 // --------------------------------------------------
@@ -583,6 +611,7 @@ async function createAndDeliverService(orderId, adminCtx) {
       await bot.telegram.sendMessage(order.telegram_user_id, userMessage);
 
       await sendLink(order.telegram_user_id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
+      await sendSubscriptionAddLink(order.telegram_user_id, result.subscriptionUrl);
     } catch (deliveryError) {
       console.error('Service created, but Telegram delivery failed:', deliveryError);
 
@@ -707,6 +736,7 @@ async function claimTrial(ctx) {
 
     await ctx.reply(`🎁 اکانت تست فعال شد.\n\n📦 حجم: ${TRIAL_ACCOUNT.trafficLabel}\n⏳ اعتبار: ${TRIAL_ACCOUNT.durationDays} روز\n👤 نام کاربری: ${result.email}`);
     await sendLink(ctx.from.id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
+    await sendSubscriptionAddLink(ctx.from.id, result.subscriptionUrl);
     await ctx.reply('برای مشاهدهٔ حجم و زمان باقی‌مانده لینک اشتراک را اضافه کن.', mainMenu());
   } catch (error) {
     console.error('Trial provisioning failed:', error);
