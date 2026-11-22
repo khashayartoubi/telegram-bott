@@ -9,6 +9,82 @@ if (!BASE_URL || !API_TOKEN) {
 
 const baseUrl = BASE_URL.endsWith('/') ? BASE_URL : `${BASE_URL}/`;
 
+function parseJson(value) {
+  if (!value || typeof value !== 'string') return value;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function getClientStats(inbound, client) {
+  const candidates = [
+    inbound.clientStats,
+    inbound.client_stats,
+    inbound.clients,
+  ].map(parseJson);
+
+  for (const list of candidates) {
+    if (!Array.isArray(list)) continue;
+
+    const stats = list.find((item) =>
+      item && (
+        String(item.email || '') === String(client.email || '') ||
+        String(item.id || '') === String(client.id || '') ||
+        String(item.subId || '') === String(client.subId || '')
+      ),
+    );
+
+    if (stats) return stats;
+  }
+
+  return null;
+}
+
+function withClientStats(client, inbound) {
+  const stats = getClientStats(inbound, client);
+  if (!stats) return client;
+
+  // Different 3x-ui releases expose counters in `clientStats`, while the
+  // client definition itself only contains quota and expiry configuration.
+  // Prefer the live statistics whenever the panel returned them.
+  return {
+    ...client,
+    ...stats,
+    totalGB: stats.totalGB ?? stats.total ?? client.totalGB,
+    expiryTime: stats.expiryTime ?? client.expiryTime,
+    up: stats.up ?? client.up,
+    down: stats.down ?? client.down,
+  };
+}
+
+function buildSubscriptionUrl(subId) {
+  const configuredBaseUrl = process.env.XUI_SUBSCRIPTION_BASE_URL?.trim();
+
+  if (!configuredBaseUrl) {
+    throw new Error('XUI_SUBSCRIPTION_BASE_URL is missing');
+  }
+
+  try {
+    const base = new URL(configuredBaseUrl);
+    if (!['http:', 'https:'].includes(base.protocol)) {
+      throw new Error('Subscription URL must use HTTP or HTTPS');
+    }
+
+    // A placeholder is useful for non-standard subscription routes; otherwise
+    // the configured base acts as a directory and receives the client subId.
+    if (configuredBaseUrl.includes('{subId}')) {
+      return configuredBaseUrl.replaceAll('{subId}', encodeURIComponent(subId));
+    }
+
+    return new URL(encodeURIComponent(subId), base.href.endsWith('/') ? base.href : `${base.href}/`).toString();
+  } catch (error) {
+    throw new Error(`Invalid XUI_SUBSCRIPTION_BASE_URL: ${error.message}`);
+  }
+}
+
 function createClientRemark(countryCode, username) {
   return `${String(countryCode || 'VPN').toUpperCase()}-${username}`;
 }
@@ -97,7 +173,7 @@ async function findClient(email) {
 
     if (client) {
       return {
-        ...client,
+        ...withClientStats(client, inbound),
         inboundId: Number(inbound.id),
         inbound,
       };
@@ -119,7 +195,7 @@ async function findClientByIdentifier(identifier) {
   for (const inbound of inbounds) {
     const clients = parseInboundSettings(inbound).clients || [];
     const client = clients.find((item) => String(item.id) === value || String(item.subId) === value);
-    if (client) return { ...client, inboundId: Number(inbound.id), inbound };
+    if (client) return { ...withClientStats(client, inbound), inboundId: Number(inbound.id), inbound };
   }
   return null;
 }
@@ -297,6 +373,7 @@ async function provisionClient(options) {
     subId: effectiveSubId,
     inboundId: result.inboundId,
     vlessUrl: withRemark(vlessUrl, createClientRemark(options.countryCode, options.email)),
+    subscriptionUrl: buildSubscriptionUrl(effectiveSubId),
     expiryTime: result.client.expiryTime,
     updatedExistingClient: result.isExisting,
   };

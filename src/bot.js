@@ -113,6 +113,10 @@ function getProductByInbound(inboundId) {
   return products.find((product) => Number(product.inboundId) === Number(inboundId));
 }
 
+function getCountryName(countryCode) {
+  return COUNTRIES.find((country) => country.code === countryCode)?.name || countryCode || 'نامشخص';
+}
+
 function getPurchasableProducts() {
   return products.filter((product) => isCountryEnabled(product.country));
 }
@@ -230,6 +234,14 @@ function getLinkIdentifier(link) {
   try {
     const url = new URL(link.trim());
     if (url.protocol === 'vless:') return decodeURIComponent(url.username);
+
+    // Support both the default `/subscription/<subId>` form and custom
+    // subscription gateways that put the identifier in a query parameter.
+    const queryIdentifier = ['subId', 'subid', 'token', 'id']
+      .map((key) => url.searchParams.get(key))
+      .find(Boolean);
+    if (queryIdentifier) return queryIdentifier;
+
     return decodeURIComponent(url.pathname.split('/').filter(Boolean).at(-1) || '');
   } catch {
     return null;
@@ -304,24 +316,6 @@ function getSelectedServerInfo(purchase) {
   const product = getProduct(purchase.productId);
 
   if (!product) return null;
-
-  if (purchase.profileInboundId) {
-    const oldServerProduct = getProductByInbound(purchase.profileInboundId);
-
-    if (oldServerProduct) {
-      return {
-        country: oldServerProduct.country,
-        countryName: oldServerProduct.countryName,
-        inboundId: Number(purchase.profileInboundId),
-      };
-    }
-
-    return {
-      country: product.country,
-      countryName: product.countryName,
-      inboundId: Number(purchase.profileInboundId),
-    };
-  }
 
   return {
     country: product.country,
@@ -486,7 +480,7 @@ async function sendPaymentInvoice(ctx, order) {
   await ctx.reply(
     `💳 اطلاعات پرداخت سفارش شما\n\n` +
       `شماره سفارش: ${order.id}\n` +
-      `کشور سرویس: ${order.country || product.countryName}\n` +
+      `کشور سرویس: ${getCountryName(order.country || product.country)}\n` +
       `مدت: ${order.duration_months} ماه\n` +
       `حجم: ${order.unlimited ? 'نامحدود' : `${order.traffic_gb} گیگابایت`}\n` +
       `تعداد کاربران: ${getUserLimitLabel(order.limit_ip)}\n` +
@@ -518,6 +512,10 @@ async function sendLink(chatId, title, url, copyButtonText) {
 }
 
 async function sendSubscriptionAddLink(chatId, subscriptionUrl) {
+  if (!subscriptionUrl || typeof subscriptionUrl !== 'string') {
+    throw new Error('Subscription URL is empty or invalid');
+  }
+
   await bot.telegram.sendMessage(
     chatId,
     `➕ لینک Subscription برای افزودن در V2Box:\n${subscriptionUrl}`,
@@ -525,6 +523,21 @@ async function sendSubscriptionAddLink(chatId, subscriptionUrl) {
       reply_markup: Markup.inlineKeyboard([
         [{ text: '📋 کپی لینک Subscription', copy_text: { text: subscriptionUrl } }],
       ]).reply_markup,
+    },
+  );
+
+  const qrCode = await QRCode.toBuffer(subscriptionUrl, {
+    type: 'png',
+    width: 768,
+    margin: 2,
+    errorCorrectionLevel: 'M',
+  });
+
+  await bot.telegram.sendPhoto(
+    chatId,
+    { source: qrCode, filename: 'subscription-qr.png' },
+    {
+      caption: '📷 QR لینک Subscription\nآن را در V2Box اسکن کن تا حجم و زمان باقی‌مانده نمایش داده شود.',
     },
   );
 }
@@ -931,6 +944,13 @@ bot.action(/^profile_use_([a-zA-Z0-9_-]{3,64})$/, async (ctx) => {
     return ctx.reply('این Username در حساب شما پیدا نشد. دوباره انتخاب کن.');
   }
 
+  const selectedProduct = getProduct(purchase.productId);
+  if (!selectedProduct || Number(profile.inbound_id) !== Number(selectedProduct.inboundId)) {
+    return ctx.reply(
+      'این Username روی سرور دیگری است. برای خرید پلن هلند یک Username جدید بساز تا کشور سرویس و اطلاعات پرداخت یکسان باشند.',
+    );
+  }
+
   purchase.username = profile.xui_email;
   purchase.profileInboundId = Number(profile.inbound_id) || null;
   purchase.profileSubId = profile.sub_id || null;
@@ -1138,7 +1158,7 @@ bot.on('text', async (ctx, next) => {
       const client = await findClientByIdentifier(identifier);
       if (!client) return ctx.reply('❌ لینک معتبر نیست یا سرویس آن دیگر وجود ندارد.');
 
-      const total = Number(client.totalGB || 0);
+      const total = Number(client.totalGB ?? client.total ?? 0);
       const used = Number(client.up || 0) + Number(client.down || 0);
       const country = getProductByInbound(client.inboundId)?.countryName || 'نامشخص';
       const traffic = total > 0
@@ -1245,9 +1265,7 @@ bot.action('confirm_order', async (ctx) => {
     return ctx.answerCbQuery(`حداکثر ${MAX_SERVICE_PROFILES} Username یکتا مجاز است.`, { show_alert: true });
   }
 
-  const selectedInboundId = profile?.inbound_id ? Number(profile.inbound_id) : Number(product.inboundId);
-
-  const serverProduct = profile?.inbound_id ? getProductByInbound(profile.inbound_id) : null;
+  const selectedInboundId = Number(product.inboundId);
 
   const extraPrice = getPriceExtra(purchase.limitIp);
   const pricing = getPurchasePricing(purchase, product);
@@ -1258,7 +1276,7 @@ bot.action('confirm_order', async (ctx) => {
     basePrice: Number(product.price),
     extraPrice,
     inboundId: selectedInboundId,
-    country: serverProduct?.country || product.country,
+    country: product.country,
   };
 
   let order;
