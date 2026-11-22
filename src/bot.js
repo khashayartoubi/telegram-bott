@@ -471,11 +471,12 @@ async function showInvoice(ctx) {
 // --------------------------------------------------
 
 async function sendPaymentInvoice(ctx, order) {
-  const cardNumber = process.env.PAYMENT_CARD_NUMBER;
-  const cardOwner = process.env.PAYMENT_CARD_OWNER;
+  const cardChannelUrl = process.env.PAYMENT_CARD_CHANNEL_URL?.trim();
+  const cardNumber = process.env.PAYMENT_CARD_NUMBER?.trim();
+  const cardOwner = process.env.PAYMENT_CARD_OWNER?.trim();
 
-  if (!cardNumber || !cardOwner) {
-    throw new Error('PAYMENT_CARD_NUMBER or PAYMENT_CARD_OWNER is missing');
+  if (!cardChannelUrl && (!cardNumber || !cardOwner)) {
+    throw new Error('Set PAYMENT_CARD_CHANNEL_URL or both PAYMENT_CARD_NUMBER and PAYMENT_CARD_OWNER');
   }
 
   const product = getProduct(order.product_id);
@@ -483,6 +484,15 @@ async function sendPaymentInvoice(ctx, order) {
   if (!product) {
     throw new Error('Product not found');
   }
+
+  const paymentDetails = cardChannelUrl
+    ? `اطلاعات کارت برای واریز در کانال زیر قرار دارد.\nلطفاً پیش از پرداخت، مبلغ و شمارهٔ کارت را همان‌جا بررسی کن.\n\n`
+    : `شماره کارت:\n${cardNumber}\n\nبه نام:\n${cardOwner}\n\n`;
+
+  const buttons = [
+    ...(cardChannelUrl ? [[primaryUrlButton('مشاهده شماره کارت', cardChannelUrl)]] : []),
+    [backButton('لغو سفارش', `cancel_order_${order.id}`)],
+  ];
 
   await ctx.reply(
     `💳 اطلاعات پرداخت سفارش شما\n\n` +
@@ -493,10 +503,9 @@ async function sendPaymentInvoice(ctx, order) {
       `تعداد کاربران: ${getUserLimitLabel(order.limit_ip)}\n` +
       `Username: ${order.xui_email}\n\n` +
       `مبلغ قابل پرداخت: ${formatPrice(order.price)}\n\n` +
-      `شماره کارت:\n${cardNumber}\n\n` +
-      `به نام:\n${cardOwner}\n\n` +
+      paymentDetails +
       `پس از واریز، تصویر رسید را به‌صورت عکس در همین گفتگو ارسال کن.`,
-    Markup.inlineKeyboard([[backButton('لغو سفارش', `cancel_order_${order.id}`)]]),
+    Markup.inlineKeyboard(buttons),
   );
 }
 
