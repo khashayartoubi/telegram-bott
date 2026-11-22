@@ -86,7 +86,15 @@ function buildSubscriptionUrl(subId) {
 }
 
 function createClientRemark(countryCode, username) {
-  return `${String(countryCode || 'VPN').toUpperCase()}-${username}`;
+  const country = String(countryCode || 'VPN').toUpperCase();
+  const flags = {
+    NL: '🇳🇱',
+    DE: '🇩🇪',
+  };
+
+  // This title is used for the directly delivered VLESS link. The title in a
+  // panel-generated subscription is controlled by that inbound's Remark.
+  return `vpanet ${country}${flags[country] ? ` ${flags[country]}` : ''}`;
 }
 
 function withRemark(vlessUrl, remark) {

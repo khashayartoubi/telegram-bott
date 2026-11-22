@@ -8,15 +8,7 @@ const products = require('./config/catalog');
 const { USER_LIMIT_OPTIONS, COUNTRIES, isCountryEnabled } = require('./config/catalog');
 const texts = require('./config/texts');
 const { createUsername, isValidUsername } = require('./utils/usernames');
-const {
-  START_MENU,
-  TRIAL_ACCOUNT,
-  DISCOUNT_CODES,
-  CONNECTION_TUTORIALS,
-  REQUIRED_CHANNEL,
-  SUPPORT,
-  MAX_SERVICE_PROFILES,
-} = require('./config/features');
+const { START_MENU, TRIAL_ACCOUNT, DISCOUNT_CODES, CONNECTION_TUTORIALS, REQUIRED_CHANNEL, SUPPORT, MAX_SERVICE_PROFILES } = require('./config/features');
 
 const {
   createOrder,
@@ -148,9 +140,7 @@ function calculateProductPrice(basePrice, limitIp) {
 }
 
 function getDiscount({ code, productId, price }) {
-  const discount = DISCOUNT_CODES.find(
-    (item) => String(item.code).toUpperCase() === String(code).toUpperCase() && item.enabled !== false,
-  );
+  const discount = DISCOUNT_CODES.find((item) => String(item.code).toUpperCase() === String(code).toUpperCase() && item.enabled !== false);
 
   if (!discount) return null;
 
@@ -161,9 +151,7 @@ function getDiscount({ code, productId, price }) {
   const basePrice = Number(price);
   if (!Number.isFinite(value) || value <= 0 || !Number.isFinite(basePrice) || basePrice < 0) return null;
 
-  const amount = discount.type === 'percent'
-    ? Math.floor((basePrice * value) / 100)
-    : Math.floor(value);
+  const amount = discount.type === 'percent' ? Math.floor((basePrice * value) / 100) : Math.floor(value);
 
   return {
     code: String(discount.code).toUpperCase(),
@@ -173,9 +161,7 @@ function getDiscount({ code, productId, price }) {
 
 function getPurchasePricing(purchase, product) {
   const beforeDiscount = calculateProductPrice(product.price, purchase.limitIp);
-  const discount = purchase.discountCode
-    ? getDiscount({ code: purchase.discountCode, productId: product.id, price: beforeDiscount })
-    : null;
+  const discount = purchase.discountCode ? getDiscount({ code: purchase.discountCode, productId: product.id, price: beforeDiscount }) : null;
 
   return {
     beforeDiscount,
@@ -199,8 +185,7 @@ async function ensureRequiredChannelMembership(ctx) {
 
   try {
     const member = await bot.telegram.getChatMember(chatId, ctx.from.id);
-    const isMember = ['creator', 'administrator', 'member'].includes(member.status)
-      || (member.status === 'restricted' && member.is_member);
+    const isMember = ['creator', 'administrator', 'member'].includes(member.status) || (member.status === 'restricted' && member.is_member);
 
     if (isMember) return true;
   } catch (error) {
@@ -237,9 +222,7 @@ function getLinkIdentifier(link) {
 
     // Support both the default `/subscription/<subId>` form and custom
     // subscription gateways that put the identifier in a query parameter.
-    const queryIdentifier = ['subId', 'subid', 'token', 'id']
-      .map((key) => url.searchParams.get(key))
-      .find(Boolean);
+    const queryIdentifier = ['subId', 'subid', 'token', 'id'].map((key) => url.searchParams.get(key)).find(Boolean);
     if (queryIdentifier) return queryIdentifier;
 
     return decodeURIComponent(url.pathname.split('/').filter(Boolean).at(-1) || '');
@@ -505,9 +488,7 @@ async function sendLink(chatId, title, url, copyButtonText) {
   // The text remains selectable. The Telegram `copy_text` button additionally
   // copies with one tap, without the user needing to long-press the link.
   await bot.telegram.sendMessage(chatId, `${title}\n${url}`, {
-    reply_markup: Markup.inlineKeyboard([
-      [{ text: copyButtonText, copy_text: { text: url } }],
-    ]).reply_markup,
+    reply_markup: Markup.inlineKeyboard([[{ text: copyButtonText, copy_text: { text: url } }]]).reply_markup,
   });
 }
 
@@ -518,11 +499,9 @@ async function sendSubscriptionAddLink(chatId, subscriptionUrl) {
 
   await bot.telegram.sendMessage(
     chatId,
-    `➕ لینک Subscription برای افزودن در V2Box:\n${subscriptionUrl}`,
+    `🔗 لینک Subscription info\n` + `این همان لینک SUB پنل است؛ آن را در V2Box اضافه کن تا حجم و مدت باقی‌مانده نمایش داده شود.\n\n` + `${subscriptionUrl}`,
     {
-      reply_markup: Markup.inlineKeyboard([
-        [{ text: '📋 کپی لینک Subscription', copy_text: { text: subscriptionUrl } }],
-      ]).reply_markup,
+      reply_markup: Markup.inlineKeyboard([[{ text: '📋 کپی لینک Subscription info', copy_text: { text: subscriptionUrl } }]]).reply_markup,
     },
   );
 
@@ -709,10 +688,7 @@ registerMenuHandler('tutorials', async (ctx) => {
 
   if (!tutorials.length) return ctx.reply('آموزش اتصال به‌زودی اضافه می‌شود.', mainMenu());
 
-  await ctx.reply(
-    '🎬 آموزش اتصال\n\nویدیوی موردنظرت را انتخاب کن:',
-    Markup.inlineKeyboard(tutorials.map((item) => [Markup.button.url(item.title, item.url)])),
-  );
+  await ctx.reply('🎬 آموزش اتصال\n\nویدیوی موردنظرت را انتخاب کن:', Markup.inlineKeyboard(tutorials.map((item) => [Markup.button.url(item.title, item.url)])));
 });
 registerMenuHandler('support', async (ctx) => startSupport(ctx));
 registerMenuHandler('trial', async (ctx) => claimTrial(ctx));
@@ -796,9 +772,7 @@ async function showProductSelector(ctx) {
   await ctx.reply(
     '🌍 لوکیشن موردنظرت رو انتخاب کن:',
     Markup.inlineKeyboard([
-      ...countries.map((country) => [
-        Markup.button.callback(`${country.flag} ${country.name}`, `country_${country.code}`),
-      ]),
+      ...countries.map((country) => [Markup.button.callback(`${country.flag} ${country.name}`, `country_${country.code}`)]),
       [backButton('🔙 بازگشت به منوی اصلی')],
     ]),
   );
@@ -827,14 +801,17 @@ bot.action(/^country_([A-Z]{2,8})$/, async (ctx) => {
 
   if (!countryName) return ctx.reply('این کشور در دسترس نیست.');
 
-  const durations = [...new Set(getPurchasableProducts().filter((product) => product.country === country).map((product) => product.months))];
+  const durations = [
+    ...new Set(
+      getPurchasableProducts()
+        .filter((product) => product.country === country)
+        .map((product) => product.months),
+    ),
+  ];
 
   await ctx.reply(
     `🌍 کشور انتخاب‌شده: ${countryName}\n\n` + `⏳ مدت اشتراک را انتخاب کن:`,
-    Markup.inlineKeyboard([
-      ...durations.map((months) => [Markup.button.callback(`${months} ماهه`, `duration_${country}_${months}`)]),
-      [backButton('🔙 بازگشت', 'show_products')],
-    ]),
+    Markup.inlineKeyboard([...durations.map((months) => [Markup.button.callback(`${months} ماهه`, `duration_${country}_${months}`)]), [backButton('🔙 بازگشت', 'show_products')]]),
   );
 });
 
@@ -878,7 +855,14 @@ bot.action(/^select_plan_(\d+)$/, async (ctx) => {
   const product = getProduct(ctx.match[1]);
   const purchase = ctx.session.purchase;
 
-  if (!product || !isCountryEnabled(product.country) || !purchase || purchase.country !== product.country || Number(purchase.months) !== Number(product.months) || purchase.step !== 'traffic') {
+  if (
+    !product ||
+    !isCountryEnabled(product.country) ||
+    !purchase ||
+    purchase.country !== product.country ||
+    Number(purchase.months) !== Number(product.months) ||
+    purchase.step !== 'traffic'
+  ) {
     return ctx.reply('سرویسی که انتخاب کردی در حال حاضر در دسترس نیست 😔 , در حال بررسی موضـوع هستیـم.');
   }
 
@@ -946,9 +930,7 @@ bot.action(/^profile_use_([a-zA-Z0-9_-]{3,64})$/, async (ctx) => {
 
   const selectedProduct = getProduct(purchase.productId);
   if (!selectedProduct || Number(profile.inbound_id) !== Number(selectedProduct.inboundId)) {
-    return ctx.reply(
-      'این Username روی سرور دیگری است. برای خرید پلن هلند یک Username جدید بساز تا کشور سرویس و اطلاعات پرداخت یکسان باشند.',
-    );
+    return ctx.reply('این Username روی سرور دیگری است. برای خرید پلن هلند یک Username جدید بساز تا کشور سرویس و اطلاعات پرداخت یکسان باشند.');
   }
 
   purchase.username = profile.xui_email;
@@ -1079,9 +1061,7 @@ bot.on('text', async (ctx, next) => {
 
   if (keyboardPurchase?.step === 'awaiting_discount_code') {
     const product = getProduct(keyboardPurchase.productId);
-    const pricing = product
-      ? getPurchasePricing({ ...keyboardPurchase, discountCode: text }, product)
-      : null;
+    const pricing = product ? getPurchasePricing({ ...keyboardPurchase, discountCode: text }, product) : null;
 
     if (!pricing?.discount) {
       return ctx.reply('این کد تخفیف معتبر نیست یا برای پلن انتخاب‌شده فعال نیست. دوباره وارد کن یا /cancel را بزن.');
@@ -1100,10 +1080,14 @@ bot.on('text', async (ctx, next) => {
     if (country) {
       keyboardPurchase.country = country.code;
       keyboardPurchase.step = 'keyboard_duration';
-      const months = [...new Set(getPurchasableProducts().filter((item) => item.country === country.code).map((item) => item.months))];
-      return ctx.reply(`🌍 کشور انتخاب‌شده: ${country.name}\n\n⏳ مدت اشتراک را انتخاب کن:`, fullWidthKeyboard([
-        ...months.map((value) => `${value} ماهه`), '🔙 بازگشت به لوکیشن',
-      ]));
+      const months = [
+        ...new Set(
+          getPurchasableProducts()
+            .filter((item) => item.country === country.code)
+            .map((item) => item.months),
+        ),
+      ];
+      return ctx.reply(`🌍 کشور انتخاب‌شده: ${country.name}\n\n⏳ مدت اشتراک را انتخاب کن:`, fullWidthKeyboard([...months.map((value) => `${value} ماهه`), '🔙 بازگشت به لوکیشن']));
     }
   }
   if (keyboardPurchase?.step === 'keyboard_duration') {
@@ -1113,25 +1097,29 @@ bot.on('text', async (ctx, next) => {
     if (available.length) {
       keyboardPurchase.months = months;
       keyboardPurchase.step = 'keyboard_plan';
-      return ctx.reply('📦 حجم موردنظرت را انتخاب کن:', fullWidthKeyboard([
-        ...available.map((item) => `${item.trafficLabel} | ${formatPrice(item.price)}`), '🔙 بازگشت به مدت',
-      ]));
+      return ctx.reply('📦 حجم موردنظرت را انتخاب کن:', fullWidthKeyboard([...available.map((item) => `${item.trafficLabel} | ${formatPrice(item.price)}`), '🔙 بازگشت به مدت']));
     }
   }
   if (keyboardPurchase?.step === 'keyboard_plan') {
     if (text === '🔙 بازگشت به مدت') {
       keyboardPurchase.step = 'keyboard_duration';
-      const months = [...new Set(getPurchasableProducts().filter((item) => item.country === keyboardPurchase.country).map((item) => item.months))];
+      const months = [
+        ...new Set(
+          getPurchasableProducts()
+            .filter((item) => item.country === keyboardPurchase.country)
+            .map((item) => item.months),
+        ),
+      ];
       return ctx.reply('⏳ مدت اشتراک را انتخاب کن:', fullWidthKeyboard([...months.map((value) => `${value} ماهه`), '🔙 بازگشت به لوکیشن']));
     }
-    const product = getPurchasableProducts().find((item) => item.country === keyboardPurchase.country && item.months === keyboardPurchase.months && `${item.trafficLabel} | ${formatPrice(item.price)}` === text);
+    const product = getPurchasableProducts().find(
+      (item) => item.country === keyboardPurchase.country && item.months === keyboardPurchase.months && `${item.trafficLabel} | ${formatPrice(item.price)}` === text,
+    );
     if (product) {
       keyboardPurchase.productId = product.id;
       delete keyboardPurchase.discountCode;
       keyboardPurchase.step = 'limit';
-      return ctx.reply('👥 تعداد کاربران مجاز هم‌زمان را انتخاب کن:', fullWidthKeyboard([
-        ...USER_LIMIT_OPTIONS.map((item) => item.label), '🔙 بازگشت به انتخاب حجم',
-      ]));
+      return ctx.reply('👥 تعداد کاربران مجاز هم‌زمان را انتخاب کن:', fullWidthKeyboard([...USER_LIMIT_OPTIONS.map((item) => item.label), '🔙 بازگشت به انتخاب حجم']));
     }
   }
   if (keyboardPurchase?.step === 'limit' && text === '🔙 بازگشت به انتخاب حجم') {
@@ -1161,9 +1149,10 @@ bot.on('text', async (ctx, next) => {
       const total = Number(client.totalGB ?? client.total ?? 0);
       const used = Number(client.up || 0) + Number(client.down || 0);
       const country = getProductByInbound(client.inboundId)?.countryName || 'نامشخص';
-      const traffic = total > 0
-        ? `📦 حجم: ${formatBytes(used)} مصرف‌شده از ${formatBytes(total)}\n📉 حجم باقی‌مانده: ${formatBytes(total - used)}`
-        : `📦 حجم: نامحدود\n📉 مصرف‌شده: ${formatBytes(used)}`;
+      const traffic =
+        total > 0
+          ? `📦 حجم: ${formatBytes(used)} مصرف‌شده از ${formatBytes(total)}\n📉 حجم باقی‌مانده: ${formatBytes(total - used)}`
+          : `📦 حجم: نامحدود\n📉 مصرف‌شده: ${formatBytes(used)}`;
 
       delete ctx.session.inquiry;
       return ctx.reply(
@@ -1354,7 +1343,13 @@ bot.action(/^edit_order_(\d+)$/, async (ctx) => {
     return ctx.reply('کشور سفارش قبلی دیگر در دسترس نیست.');
   }
 
-  const durations = [...new Set(getPurchasableProducts().filter((product) => product.country === country.code).map((product) => product.months))];
+  const durations = [
+    ...new Set(
+      getPurchasableProducts()
+        .filter((product) => product.country === country.code)
+        .map((product) => product.months),
+    ),
+  ];
 
   await ctx.reply(
     `سفارش ${orderId} لغو شد و می‌توانی نسخهٔ جدید آن را بسازی.\n\n⏳ مدت اشتراک را انتخاب کن:`,
@@ -1622,20 +1617,17 @@ bot.action('main_menu', async (ctx) => {
 async function startSupport(ctx) {
   ctx.session.support = true;
 
-await ctx.reply(
-  `سلام و وقت بخیر 🌹\n\n` +
-    `اگر درباره سرویس‌هات سوالی داری یا با مشکلی مواجه شدی، تیم پشتیبانی مستر سرور آماده پاسخگویی به شماست.\n\n` +
-    `🕘 ساعت پاسخگویی پشتیبانی: هر روز از ساعت ۹ صبح تا ۱۰ شب\n\n` +
-    `📩 می‌تونی سوال یا درخواستت رو همین‌جا از طریق ربات ارسال کنی تا در اولین فرصت بررسی و پاسخ داده بشه.\n\n` +
-    `💬 برای ارتباط سریع‌تر و دریافت پشتیبانی مستقیم، از طریق آیدی زیر با ما در ارتباط باش:\n\n` +
-    `🆔 @vipanet\n\n` +
-    `منتظر پیام‌هات هستیم ❤️\n\n` +
-    `✍️ پیامت رو ارسال کن یا برای بازگشت، دکمه «❌ انصراف» رو بزن.`,
-  Markup.inlineKeyboard([
-    [Markup.button.url('💬 ارتباط مستقیم با پشتیبانی', SUPPORT.directUrl)],
-    [Markup.button.callback('❌ انصراف', 'support_cancel')],
-  ]),
-);
+  await ctx.reply(
+    `سلام و وقت بخیر 🌹\n\n` +
+      `اگر درباره سرویس‌هات سوالی داری یا با مشکلی مواجه شدی، تیم پشتیبانی ویپانت آماده پاسخگویی به شماست.\n\n` +
+      `🕘 ساعت پاسخگویی پشتیبانی: هر روز از ساعت ۹ صبح تا ۱۰ شب\n\n` +
+      `📩 می‌تونی سوال یا درخواستت رو همین‌جا از طریق ربات ارسال کنی تا در اولین فرصت بررسی و پاسخ داده بشه.\n\n` +
+      `💬 برای ارتباط سریع‌تر و دریافت پشتیبانی مستقیم، از طریق آیدی زیر با ما در ارتباط باش:\n\n` +
+      `🆔 @vipanet\n\n` +
+      `منتظر پیام‌هات هستیم ❤️\n\n` +
+      `✍️ پیامت رو ارسال کن یا برای بازگشت، دکمه «❌ انصراف» رو بزن.`,
+    Markup.inlineKeyboard([[Markup.button.url('💬 ارتباط مستقیم با پشتیبانی', SUPPORT.directUrl)], [Markup.button.callback('❌ انصراف', 'support_cancel')]]),
+  );
 }
 
 bot.action('support', async (ctx) => {
@@ -1672,17 +1664,13 @@ async function startBot() {
     // تنظیم منوی تلگرام برای اجرای بات ضروری نیست. اگر تلگرام این API را
     // rate-limit کند، polling بات باید همچنان فعال بماند.
     try {
-      await bot.telegram.setMyCommands([
-        { command: 'start', description: 'شروع' },
-      ]);
+      await bot.telegram.setMyCommands([{ command: 'start', description: 'شروع' }]);
       await bot.telegram.callApi('setChatMenuButton', {
         menu_button: { type: 'commands' },
       });
     } catch (error) {
       const retryAfter = error?.response?.parameters?.retry_after;
-      console.warn(
-        `Telegram menu setup was skipped${retryAfter ? `; retry after ${retryAfter}s` : ''}: ${error.message}`,
-      );
+      console.warn(`Telegram menu setup was skipped${retryAfter ? `; retry after ${retryAfter}s` : ''}: ${error.message}`);
     }
   } catch (error) {
     console.error('Failed to start bot:', error);
