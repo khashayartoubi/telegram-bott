@@ -2,7 +2,9 @@
 // برای پنهان کردن یک گزینه، enabled را false کن؛ ترتیب آرایه همان ترتیب منو است.
 function optionalTelegramChatId(value) {
   const chatId = String(value || '').trim();
-  return /^-?\d+$/.test(chatId) ? chatId : '';
+  // A public channel username is valid for getChatMember as well as a numeric
+  // channel ID. Private channels must still use their -100... ID.
+  return /^-?\d+$/.test(chatId) || /^@[A-Za-z][A-Za-z0-9_]{4,31}$/.test(chatId) ? chatId : '';
 }
 
 const START_MENU = [
@@ -30,9 +32,9 @@ const CONNECTION_TUTORIALS = [
 ];
 
 const REQUIRED_CHANNEL = {
-  // اگر شناسه تنظیم نشود یا معتبر نباشد، بررسی عضویت کانال غیرفعال است.
+  // شناسهٔ عددی کانال خصوصی یا @username کانال عمومی. اگر تنظیم نشود، بررسی عضویت غیرفعال است.
   chatId: optionalTelegramChatId(process.env.REQUIRED_CHANNEL_ID),
-  joinUrl: 'https://t.me/+9AIDlPT1CmBkNmRk',
+  joinUrl: process.env.REQUIRED_CHANNEL_URL?.trim() || 'https://t.me/vpanetCO',
 };
 REQUIRED_CHANNEL.enabled = Boolean(REQUIRED_CHANNEL.chatId);
 
