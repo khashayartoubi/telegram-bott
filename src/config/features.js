@@ -39,7 +39,7 @@ REQUIRED_CHANNEL.enabled = Boolean(REQUIRED_CHANNEL.chatId);
 const SUPPORT = {
   // مقدار خالی یا نمونهٔ -100...، ارسال داخلی را غیرفعال می‌کند.
   chatId: optionalTelegramChatId(process.env.SUPPORT_CHAT_ID),
-  directUrl: 'https://t.me/MRSERVER_SELLER',
+  directUrl: 'https://t.me/+9AIDlPT1CmBkNmRk',
 };
 
 // سقف پروفایل‌های یکتا برای هر کاربر. سفارش‌های قدیمی نیز به‌عنوان پروفایل

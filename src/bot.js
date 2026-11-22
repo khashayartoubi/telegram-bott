@@ -65,7 +65,9 @@ function formatPrice(price) {
 }
 
 function callbackButton(text, action, tone) {
-  const icons = { danger: '🔴', primary: '🔵', success: '🟢' };
+  // Telegram does not allow custom inline-button background colours. The
+  // leading colour marker keeps the role clear in every Telegram client.
+  const icons = { danger: '🔴', neutral: '⚪', success: '🟢' };
   const icon = icons[tone] || '';
   const label = icon && !text.startsWith(icon) ? `${icon} ${text}` : text;
 
@@ -73,7 +75,15 @@ function callbackButton(text, action, tone) {
 }
 
 function backButton(text = '🔙 بازگشت', action = 'main_menu') {
-  return callbackButton(text, action, text.includes('لغو') ? 'danger' : 'primary');
+  return callbackButton(text, action, /لغو|انصراف/.test(text) ? 'danger' : 'neutral');
+}
+
+function successButton(text, action) {
+  return callbackButton(text, action, 'success');
+}
+
+function dangerButton(text, action) {
+  return callbackButton(text, action, 'danger');
 }
 
 function mainMenu() {
@@ -284,7 +294,7 @@ async function showMyOrders(ctx, keyboard = mainMenu()) {
     .slice(0, 10)
     .flatMap((order) => [
       [Markup.button.callback(`✏️ ویرایش سفارش #${order.id}`, `edit_order_${order.id}`)],
-      [Markup.button.callback(`لغو سفارش #${order.id}`, `cancel_order_${order.id}`)],
+      [dangerButton(`لغو سفارش #${order.id}`, `cancel_order_${order.id}`)],
     ]);
 
   if (buttons.length) {
@@ -436,9 +446,13 @@ async function showInvoice(ctx) {
       `توجه: با فعال‌سازی خرید روی Username قبلی، حجم و اعتبار قبلی حذف و سرویس جدید جایگزین می‌شود.\n\n` +
       `اطلاعات را بررسی و سفارش را ثبت کن.`,
     Markup.inlineKeyboard([
-      [Markup.button.callback(' تأیید و ثبت سفارش', 'confirm_order')],
+      [successButton('تأیید و ثبت سفارش', 'confirm_order')],
       [Markup.button.callback('🔄 تغییر نام کاربـری ', 'change_username')],
-      [Markup.button.callback(pricing.discount ? '🗑 حذف کد تخفیف' : '🎟 وارد کردن کد تخفیف', pricing.discount ? 'remove_discount' : 'enter_discount')],
+      [
+        pricing.discount
+          ? dangerButton('حذف کد تخفیف', 'remove_discount')
+          : Markup.button.callback('🎟 وارد کردن کد تخفیف', 'enter_discount'),
+      ],
       [backButton('لغو خرید', 'cancel_purchase')],
     ]),
   );
@@ -1412,8 +1426,8 @@ bot.on('photo', async (ctx) => {
     await ctx.telegram.sendPhoto(ADMIN_ID, photo.file_id, {
       caption,
       reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback(' تأیید پرداخت', `payment_approve_${order.id}`)],
-        [Markup.button.callback(' رد پرداخت', `payment_reject_${order.id}`)],
+        [successButton('تأیید پرداخت', `payment_approve_${order.id}`)],
+        [dangerButton('رد پرداخت', `payment_reject_${order.id}`)],
       ]).reply_markup,
     });
   } catch (error) {
@@ -1623,7 +1637,7 @@ async function startSupport(ctx) {
       `🆔 @vipanet\n\n` +
       `منتظر پیام‌هات هستیم ❤️\n\n` +
       `✍️ پیامت رو ارسال کن یا برای بازگشت، دکمه «❌ انصراف» رو بزن.`,
-    Markup.inlineKeyboard([[Markup.button.url('💬 ارتباط مستقیم با پشتیبانی', SUPPORT.directUrl)], [Markup.button.callback('❌ انصراف', 'support_cancel')]]),
+    Markup.inlineKeyboard([[Markup.button.url('💬 ارتباط مستقیم با پشتیبانی', SUPPORT.directUrl)], [dangerButton('انصراف', 'support_cancel')]]),
   );
 }
 
