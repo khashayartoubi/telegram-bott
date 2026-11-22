@@ -1665,17 +1665,25 @@ async function startBot() {
 
     console.log(`Authenticated as @${me.username}`);
 
-    // تنها دستور قابل نمایش در منوی کنار کادر پیام.
-    await bot.telegram.setMyCommands([
-      { command: 'start', description: 'شروع' },
-    ]);
-    await bot.telegram.callApi('setChatMenuButton', {
-      menu_button: { type: 'commands' },
-    });
-
     await bot.launch();
 
     console.log('Telegram bot started successfully!');
+
+    // تنظیم منوی تلگرام برای اجرای بات ضروری نیست. اگر تلگرام این API را
+    // rate-limit کند، polling بات باید همچنان فعال بماند.
+    try {
+      await bot.telegram.setMyCommands([
+        { command: 'start', description: 'شروع' },
+      ]);
+      await bot.telegram.callApi('setChatMenuButton', {
+        menu_button: { type: 'commands' },
+      });
+    } catch (error) {
+      const retryAfter = error?.response?.parameters?.retry_after;
+      console.warn(
+        `Telegram menu setup was skipped${retryAfter ? `; retry after ${retryAfter}s` : ''}: ${error.message}`,
+      );
+    }
   } catch (error) {
     console.error('Failed to start bot:', error);
     process.exitCode = 1;
