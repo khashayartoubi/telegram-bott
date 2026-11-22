@@ -238,7 +238,7 @@ function getLinkIdentifier(link) {
 
 function getRemainingDays(expiryTime) {
   let expiry = Number(expiryTime);
-  if (!Number.isFinite(expiry) || expiry <= 0) return null;
+  if (!Number.isFinite(expiry) || expiry <= 0) return 0;
 
   // برخی نسخه‌های پنل timestamp را بر حسب ثانیه برمی‌گردانند، نه میلی‌ثانیه.
   if (expiry < 100_000_000_000) expiry *= 1000;
@@ -289,7 +289,7 @@ async function showMyOrders(ctx, keyboard = mainMenu()) {
     .slice(0, 10)
     .flatMap((order) => [
       [Markup.button.callback(`✏️ ویرایش سفارش #${order.id}`, `edit_order_${order.id}`)],
-      [callbackButton(`لغو سفارش #${order.id}`, `cancel_order_${order.id}`, 'danger')],
+      [Markup.button.callback(`لغو سفارش #${order.id}`, `cancel_order_${order.id}`)],
     ]);
 
   if (buttons.length) {
@@ -457,7 +457,7 @@ async function showInvoice(ctx) {
       `توجه: با فعال‌سازی خرید روی Username قبلی، حجم و اعتبار قبلی حذف و سرویس جدید جایگزین می‌شود.\n\n` +
       `اطلاعات را بررسی و سفارش را ثبت کن.`,
     Markup.inlineKeyboard([
-      [callbackButton('تأیید و ثبت سفارش', 'confirm_order', 'success')],
+      [Markup.button.callback(' تأیید و ثبت سفارش', 'confirm_order')],
       [Markup.button.callback('🔄 تغییر نام کاربـری ', 'change_username')],
       [Markup.button.callback(pricing.discount ? '🗑 حذف کد تخفیف' : '🎟 وارد کردن کد تخفیف', pricing.discount ? 'remove_discount' : 'enter_discount')],
       [backButton('لغو خرید', 'cancel_purchase')],
@@ -517,16 +517,16 @@ async function sendLink(chatId, title, url, copyButtonText) {
   });
 }
 
-async function sendQrCode(chatId, url) {
-  const qrCode = await QRCode.toBuffer(url, {
-    errorCorrectionLevel: 'M',
-    margin: 1,
-    width: 700,
-  });
-
-  await bot.telegram.sendPhoto(chatId, { source: qrCode }, {
-    caption: '📷 QR Code لینک VLESS',
-  });
+async function sendSubscriptionAddLink(chatId, subscriptionUrl) {
+  await bot.telegram.sendMessage(
+    chatId,
+    `➕ لینک Subscription برای افزودن در V2Box:\n${subscriptionUrl}`,
+    {
+      reply_markup: Markup.inlineKeyboard([
+        [{ text: '📋 کپی لینک Subscription', copy_text: { text: subscriptionUrl } }],
+      ]).reply_markup,
+    },
+  );
 }
 
 // --------------------------------------------------
@@ -621,7 +621,7 @@ async function createAndDeliverService(orderId, adminCtx) {
       await bot.telegram.sendMessage(order.telegram_user_id, userMessage);
 
       await sendLink(order.telegram_user_id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
-      await sendQrCode(order.telegram_user_id, result.vlessUrl);
+      await sendSubscriptionAddLink(order.telegram_user_id, result.subscriptionUrl);
     } catch (deliveryError) {
       console.error('Service created, but Telegram delivery failed:', deliveryError);
 
@@ -746,7 +746,7 @@ async function claimTrial(ctx) {
 
     await ctx.reply(`🎁 اکانت تست فعال شد.\n\n📦 حجم: ${TRIAL_ACCOUNT.trafficLabel}\n⏳ اعتبار: ${TRIAL_ACCOUNT.durationDays} روز\n👤 نام کاربری: ${result.email}`);
     await sendLink(ctx.from.id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
-    await sendQrCode(ctx.from.id, result.vlessUrl);
+    await sendSubscriptionAddLink(ctx.from.id, result.subscriptionUrl);
     await ctx.reply('برای مشاهدهٔ حجم و زمان باقی‌مانده لینک اشتراک را اضافه کن.', mainMenu());
   } catch (error) {
     console.error('Trial provisioning failed:', error);
@@ -1144,11 +1144,10 @@ bot.on('text', async (ctx, next) => {
       const traffic = total > 0
         ? `📦 حجم: ${formatBytes(used)} مصرف‌شده از ${formatBytes(total)}\n📉 حجم باقی‌مانده: ${formatBytes(total - used)}`
         : `📦 حجم: نامحدود\n📉 مصرف‌شده: ${formatBytes(used)}`;
-      const remainingDays = getRemainingDays(client.expiryTime);
 
       delete ctx.session.inquiry;
       return ctx.reply(
-        `✅ استعلام سرویس\n\n👤 نام کاربری: ${client.email || 'نامشخص'}\n🌍 لوکیشن: ${country}\n${traffic}\n⏳ زمان باقی‌مانده: ${remainingDays === null ? 'نامحدود' : `${remainingDays} روز`}\n👥 تعداد دستگاه مجاز: ${getUserLimitLabel(client.limitIp)}\n📡 وضعیت: ${client.enable ? 'فعال' : 'غیرفعال'}`,
+        `✅ استعلام سرویس\n\n👤 نام کاربری: ${client.email || 'نامشخص'}\n🌍 لوکیشن: ${country}\n${traffic}\n⏳ زمان باقی‌مانده: ${getRemainingDays(client.expiryTime)} روز\n👥 تعداد دستگاه مجاز: ${getUserLimitLabel(client.limitIp)}\n📡 وضعیت: ${client.enable ? 'فعال' : 'غیرفعال'}`,
         mainMenu(),
       );
     } catch (error) {
@@ -1605,18 +1604,20 @@ bot.action('main_menu', async (ctx) => {
 async function startSupport(ctx) {
   ctx.session.support = true;
 
-  await ctx.reply(
-    `دوست عزیز سلام، امیدوارم که عالی باشی ❤️\n\n` +
-      `🔰 پشتیبانی مستر سرور از ساعت ۹ صبح تا ۱۲ شب در خدمت شماست جهت پاسخگویی به سوالات و چالش‌های شما عزیزان.\n\n` +
-      `🔰 هم می‌تونی پیامت رو همین‌جا از طریق ربات برای ما ارسال کنی تا پاسخگو باشیم.\n\n` +
-      `🛑 برای پاسخگویی سریع‌تر بهتر است به آیدی رسمی پشتیبانی مسترسرور پیام بدهی تا مستقیم در پیوی پشتیبانی شوی.\n` +
-      `🆔 @MRSERVER_SELLER\n\n` +
-      `✍️ پیام خود را ارسال کن یا با دکمهٔ «❌ انصراف» بازگرد.`,
-    Markup.inlineKeyboard([
-      [Markup.button.url('💬 پیام مستقیم به پشتیبانی', SUPPORT.directUrl)],
-      [Markup.button.callback('❌ انصراف', 'support_cancel')],
-    ]),
-  );
+await ctx.reply(
+  `سلام و وقت بخیر 🌹\n\n` +
+    `اگر درباره سرویس‌هات سوالی داری یا با مشکلی مواجه شدی، تیم پشتیبانی مستر سرور آماده پاسخگویی به شماست.\n\n` +
+    `🕘 ساعت پاسخگویی پشتیبانی: هر روز از ساعت ۹ صبح تا ۱۰ شب\n\n` +
+    `📩 می‌تونی سوال یا درخواستت رو همین‌جا از طریق ربات ارسال کنی تا در اولین فرصت بررسی و پاسخ داده بشه.\n\n` +
+    `💬 برای ارتباط سریع‌تر و دریافت پشتیبانی مستقیم، از طریق آیدی زیر با ما در ارتباط باش:\n\n` +
+    `🆔 @vipanet\n\n` +
+    `منتظر پیام‌هات هستیم ❤️\n\n` +
+    `✍️ پیامت رو ارسال کن یا برای بازگشت، دکمه «❌ انصراف» رو بزن.`,
+  Markup.inlineKeyboard([
+    [Markup.button.url('💬 ارتباط مستقیم با پشتیبانی', SUPPORT.directUrl)],
+    [Markup.button.callback('❌ انصراف', 'support_cancel')],
+  ]),
+);
 }
 
 bot.action('support', async (ctx) => {
