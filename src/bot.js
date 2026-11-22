@@ -318,6 +318,8 @@ async function showUsernameOptions(ctx) {
     return ctx.reply('فرایند خرید پیدا نشد. دوباره از منوی اصلی شروع کن.');
   }
 
+  // همهٔ Usernameهای کاربر باید قابل انتخاب باشند؛ هنگام استفاده از مورد
+  // قبلی، همان inbound قبلی حفظ می‌شود و به کشور انتخاب‌شده محدود نیست.
   const profiles = getUserProfiles(ctx.from.id);
 
   purchase.step = 'choose_username';
@@ -926,11 +928,6 @@ bot.action(/^profile_use_([a-zA-Z0-9_-]{3,64})$/, async (ctx) => {
 
   if (!profile) {
     return ctx.reply('این Username در حساب شما پیدا نشد. دوباره انتخاب کن.');
-  }
-
-  const selectedProduct = getProduct(purchase.productId);
-  if (!selectedProduct || Number(profile.inbound_id) !== Number(selectedProduct.inboundId)) {
-    return ctx.reply('این Username روی سرور دیگری است. برای خرید پلن هلند یک Username جدید بساز تا کشور سرویس و اطلاعات پرداخت یکسان باشند.');
   }
 
   purchase.username = profile.xui_email;

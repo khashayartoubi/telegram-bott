@@ -42,7 +42,9 @@ const SUPPORT = {
   directUrl: 'https://t.me/MRSERVER_SELLER',
 };
 
-const MAX_SERVICE_PROFILES = 3;
+// سقف پروفایل‌های یکتا برای هر کاربر. سفارش‌های قدیمی نیز به‌عنوان پروفایل
+// مهاجرت می‌شوند، بنابراین مقدار بسیار کوچک جلوی ساخت Username جدید را می‌گیرد.
+const MAX_SERVICE_PROFILES = 10;
 
 const TRIAL_ACCOUNT = {
   enabled: true,
