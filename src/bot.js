@@ -1,6 +1,7 @@
 require('dotenv').config();
 
 const crypto = require('crypto');
+const QRCode = require('qrcode');
 const { Telegraf, Markup, session } = require('telegraf');
 
 const products = require('./config/catalog');
@@ -71,12 +72,16 @@ function formatPrice(price) {
   return `${Number(price).toLocaleString('fa-IR')} تومان`;
 }
 
-function callbackButton(text, action, style) {
-  return { text, callback_data: action, ...(style ? { style } : {}) };
+function callbackButton(text, action, tone) {
+  const icons = { danger: '🔴', primary: '🔵', success: '🟢' };
+  const icon = icons[tone] || '';
+  const label = icon && !text.startsWith(icon) ? `${icon} ${text}` : text;
+
+  return { text: label, callback_data: action };
 }
 
 function backButton(text = '🔙 بازگشت', action = 'main_menu') {
-  return callbackButton(text, action, 'danger');
+  return callbackButton(text, action, text.includes('لغو') ? 'danger' : 'primary');
 }
 
 function mainMenu() {
@@ -213,6 +218,11 @@ function clearPurchase(ctx) {
 
 function formatBytes(bytes) {
   const value = Math.max(0, Number(bytes) || 0);
+
+  if (value < 1024 * 1024 * 1024) {
+    return `${(value / 1024 / 1024).toFixed(0)} مگابایت`;
+  }
+
   return `${(value / 1024 / 1024 / 1024).toFixed(2)} گیگابایت`;
 }
 
@@ -227,7 +237,13 @@ function getLinkIdentifier(link) {
 }
 
 function getRemainingDays(expiryTime) {
-  const remaining = Number(expiryTime) - Date.now();
+  let expiry = Number(expiryTime);
+  if (!Number.isFinite(expiry) || expiry <= 0) return null;
+
+  // برخی نسخه‌های پنل timestamp را بر حسب ثانیه برمی‌گردانند، نه میلی‌ثانیه.
+  if (expiry < 100_000_000_000) expiry *= 1000;
+
+  const remaining = expiry - Date.now();
   return Math.max(0, Math.ceil(remaining / 86_400_000));
 }
 
@@ -273,7 +289,7 @@ async function showMyOrders(ctx, keyboard = mainMenu()) {
     .slice(0, 10)
     .flatMap((order) => [
       [Markup.button.callback(`✏️ ویرایش سفارش #${order.id}`, `edit_order_${order.id}`)],
-      [Markup.button.callback(`لغو سفارش #${order.id}`, `cancel_order_${order.id}`)],
+      [callbackButton(`لغو سفارش #${order.id}`, `cancel_order_${order.id}`, 'danger')],
     ]);
 
   if (buttons.length) {
@@ -441,7 +457,7 @@ async function showInvoice(ctx) {
       `توجه: با فعال‌سازی خرید روی Username قبلی، حجم و اعتبار قبلی حذف و سرویس جدید جایگزین می‌شود.\n\n` +
       `اطلاعات را بررسی و سفارش را ثبت کن.`,
     Markup.inlineKeyboard([
-      [Markup.button.callback(' تأیید و ثبت سفارش', 'confirm_order')],
+      [callbackButton('تأیید و ثبت سفارش', 'confirm_order', 'success')],
       [Markup.button.callback('🔄 تغییر نام کاربـری ', 'change_username')],
       [Markup.button.callback(pricing.discount ? '🗑 حذف کد تخفیف' : '🎟 وارد کردن کد تخفیف', pricing.discount ? 'remove_discount' : 'enter_discount')],
       [backButton('لغو خرید', 'cancel_purchase')],
@@ -501,16 +517,16 @@ async function sendLink(chatId, title, url, copyButtonText) {
   });
 }
 
-async function sendSubscriptionAddLink(chatId, subscriptionUrl) {
-  await bot.telegram.sendMessage(
-    chatId,
-    `➕ لینک Subscription برای افزودن در V2Box:\n${subscriptionUrl}`,
-    {
-      reply_markup: Markup.inlineKeyboard([
-        [{ text: '📋 کپی لینک Subscription', copy_text: { text: subscriptionUrl } }],
-      ]).reply_markup,
-    },
-  );
+async function sendQrCode(chatId, url) {
+  const qrCode = await QRCode.toBuffer(url, {
+    errorCorrectionLevel: 'M',
+    margin: 1,
+    width: 700,
+  });
+
+  await bot.telegram.sendPhoto(chatId, { source: qrCode }, {
+    caption: '📷 QR Code لینک VLESS',
+  });
 }
 
 // --------------------------------------------------
@@ -605,7 +621,7 @@ async function createAndDeliverService(orderId, adminCtx) {
       await bot.telegram.sendMessage(order.telegram_user_id, userMessage);
 
       await sendLink(order.telegram_user_id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
-      await sendSubscriptionAddLink(order.telegram_user_id, result.subscriptionUrl);
+      await sendQrCode(order.telegram_user_id, result.vlessUrl);
     } catch (deliveryError) {
       console.error('Service created, but Telegram delivery failed:', deliveryError);
 
@@ -730,7 +746,7 @@ async function claimTrial(ctx) {
 
     await ctx.reply(`🎁 اکانت تست فعال شد.\n\n📦 حجم: ${TRIAL_ACCOUNT.trafficLabel}\n⏳ اعتبار: ${TRIAL_ACCOUNT.durationDays} روز\n👤 نام کاربری: ${result.email}`);
     await sendLink(ctx.from.id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
-    await sendSubscriptionAddLink(ctx.from.id, result.subscriptionUrl);
+    await sendQrCode(ctx.from.id, result.vlessUrl);
     await ctx.reply('برای مشاهدهٔ حجم و زمان باقی‌مانده لینک اشتراک را اضافه کن.', mainMenu());
   } catch (error) {
     console.error('Trial provisioning failed:', error);
@@ -1128,10 +1144,11 @@ bot.on('text', async (ctx, next) => {
       const traffic = total > 0
         ? `📦 حجم: ${formatBytes(used)} مصرف‌شده از ${formatBytes(total)}\n📉 حجم باقی‌مانده: ${formatBytes(total - used)}`
         : `📦 حجم: نامحدود\n📉 مصرف‌شده: ${formatBytes(used)}`;
+      const remainingDays = getRemainingDays(client.expiryTime);
 
       delete ctx.session.inquiry;
       return ctx.reply(
-        `✅ استعلام سرویس\n\n👤 نام کاربری: ${client.email || 'نامشخص'}\n🌍 لوکیشن: ${country}\n${traffic}\n⏳ زمان باقی‌مانده: ${getRemainingDays(client.expiryTime)} روز\n👥 تعداد دستگاه مجاز: ${getUserLimitLabel(client.limitIp)}\n📡 وضعیت: ${client.enable ? 'فعال' : 'غیرفعال'}`,
+        `✅ استعلام سرویس\n\n👤 نام کاربری: ${client.email || 'نامشخص'}\n🌍 لوکیشن: ${country}\n${traffic}\n⏳ زمان باقی‌مانده: ${remainingDays === null ? 'نامحدود' : `${remainingDays} روز`}\n👥 تعداد دستگاه مجاز: ${getUserLimitLabel(client.limitIp)}\n📡 وضعیت: ${client.enable ? 'فعال' : 'غیرفعال'}`,
         mainMenu(),
       );
     } catch (error) {
