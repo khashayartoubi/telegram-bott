@@ -67,7 +67,7 @@ function formatPrice(price) {
 function callbackButton(text, action, tone) {
   // Telegram does not allow custom inline-button background colours. The
   // leading colour marker keeps the role clear in every Telegram client.
-  const icons = { danger: '🔴', neutral: '⚪', success: '🟢' };
+  const icons = { primary: '🔵', danger: '🔴', neutral: '⚪', success: '🟢' };
   const icon = icons[tone] || '';
   const label = icon && !text.startsWith(icon) ? `${icon} ${text}` : text;
 
@@ -84,6 +84,14 @@ function successButton(text, action) {
 
 function dangerButton(text, action) {
   return callbackButton(text, action, 'danger');
+}
+
+function primaryButton(text, action) {
+  return callbackButton(text, action, 'primary');
+}
+
+function primaryUrlButton(text, url) {
+  return Markup.button.url(text.startsWith('🔵') ? text : `🔵 ${text}`, url);
 }
 
 function mainMenu() {
@@ -204,7 +212,7 @@ async function ensureRequiredChannelMembership(ctx) {
 
   await ctx.reply(
     'برای خرید کانفیگ ابتدا عضو کانال زیر شو، سپس دوباره گزینهٔ خرید را انتخاب کن.',
-    Markup.inlineKeyboard([[Markup.button.url('📢 عضویت در کانال', REQUIRED_CHANNEL.joinUrl)]]),
+    Markup.inlineKeyboard([[primaryUrlButton('📢 عضویت در کانال', REQUIRED_CHANNEL.joinUrl)]]),
   );
   return false;
 }
@@ -293,7 +301,7 @@ async function showMyOrders(ctx, keyboard = mainMenu()) {
     .filter((order) => ['awaiting_payment', 'rejected'].includes(order.status))
     .slice(0, 10)
     .flatMap((order) => [
-      [Markup.button.callback(`✏️ ویرایش سفارش #${order.id}`, `edit_order_${order.id}`)],
+      [primaryButton(`✏️ ویرایش سفارش #${order.id}`, `edit_order_${order.id}`)],
       [dangerButton(`لغو سفارش #${order.id}`, `cancel_order_${order.id}`)],
     ]);
 
@@ -340,11 +348,11 @@ async function showUsernameOptions(ctx) {
     for (const profile of profiles) {
       const defaultLabel = profile.is_default ? ' ⭐ پیش‌فرض' : '';
 
-      buttons.push([Markup.button.callback(`🔄 ${profile.xui_email}${defaultLabel}`, `profile_use_${profile.xui_email}`)]);
+      buttons.push([primaryButton(`🔄 ${profile.xui_email}${defaultLabel}`, `profile_use_${profile.xui_email}`)]);
     }
 
     if (canCreateNewUsername(ctx.from.id)) {
-      buttons.push([Markup.button.callback('➕ ساخت Username جدید', 'username_new')]);
+      buttons.push([primaryButton('➕ ساخت Username جدید', 'username_new')]);
     }
 
     await ctx.reply(
@@ -362,9 +370,9 @@ async function showUsernameOptions(ctx) {
     return;
   }
 
-  buttons.push([Markup.button.callback(texts.username.autoButton, 'username_auto')]);
+  buttons.push([primaryButton(texts.username.autoButton, 'username_auto')]);
 
-  buttons.push([Markup.button.callback(texts.username.customButton, 'username_custom')]);
+  buttons.push([primaryButton(texts.username.customButton, 'username_custom')]);
 
   buttons.push([backButton('لغو خرید', 'cancel_purchase')]);
 
@@ -390,8 +398,8 @@ async function showNewUsernameOptions(ctx) {
   await ctx.reply(
     'برای سرویس جدید Username انتخاب کن:',
     Markup.inlineKeyboard([
-      [Markup.button.callback(texts.username.autoButton, 'username_auto')],
-      [Markup.button.callback(texts.username.customButton, 'username_custom')],
+      [primaryButton(texts.username.autoButton, 'username_auto')],
+      [primaryButton(texts.username.customButton, 'username_custom')],
       [backButton('🔙 بازگشت به نام‌های قبلی', 'username_back')],
       [backButton('لغو خرید', 'cancel_purchase')],
     ]),
@@ -447,11 +455,11 @@ async function showInvoice(ctx) {
       `اطلاعات را بررسی و سفارش را ثبت کن.`,
     Markup.inlineKeyboard([
       [successButton('تأیید و ثبت سفارش', 'confirm_order')],
-      [Markup.button.callback('🔄 تغییر نام کاربـری ', 'change_username')],
+      [primaryButton('🔄 تغییر نام کاربـری ', 'change_username')],
       [
         pricing.discount
           ? dangerButton('حذف کد تخفیف', 'remove_discount')
-          : Markup.button.callback('🎟 وارد کردن کد تخفیف', 'enter_discount'),
+          : primaryButton('🎟 وارد کردن کد تخفیف', 'enter_discount'),
       ],
       [backButton('لغو خرید', 'cancel_purchase')],
     ]),
@@ -504,7 +512,7 @@ async function sendLink(chatId, title, url, copyButtonText) {
   // The text remains selectable. The Telegram `copy_text` button additionally
   // copies with one tap, without the user needing to long-press the link.
   await bot.telegram.sendMessage(chatId, `${title}\n${url}`, {
-    reply_markup: Markup.inlineKeyboard([[{ text: copyButtonText, copy_text: { text: url } }]]).reply_markup,
+    reply_markup: Markup.inlineKeyboard([[{ text: `🔵 ${copyButtonText}`, copy_text: { text: url } }]]).reply_markup,
   });
 }
 
@@ -517,7 +525,7 @@ async function sendSubscriptionAddLink(chatId, subscriptionUrl) {
     chatId,
     `🔗 لینک Subscription info\n` + `این همان لینک SUB پنل است؛ آن را در V2Box اضافه کن تا حجم و مدت باقی‌مانده نمایش داده شود.\n\n` + `${subscriptionUrl}`,
     {
-      reply_markup: Markup.inlineKeyboard([[{ text: '📋 کپی لینک Subscription info', copy_text: { text: subscriptionUrl } }]]).reply_markup,
+      reply_markup: Markup.inlineKeyboard([[{ text: '🔵 📋 کپی لینک Subscription info', copy_text: { text: subscriptionUrl } }]]).reply_markup,
     },
   );
 
@@ -704,7 +712,7 @@ registerMenuHandler('tutorials', async (ctx) => {
 
   if (!tutorials.length) return ctx.reply('آموزش اتصال به‌زودی اضافه می‌شود.', mainMenu());
 
-  await ctx.reply('🎬 آموزش اتصال\n\nویدیوی موردنظرت را انتخاب کن:', Markup.inlineKeyboard(tutorials.map((item) => [Markup.button.url(item.title, item.url)])));
+  await ctx.reply('🎬 آموزش اتصال\n\nویدیوی موردنظرت را انتخاب کن:', Markup.inlineKeyboard(tutorials.map((item) => [primaryUrlButton(item.title, item.url)])));
 });
 registerMenuHandler('support', async (ctx) => startSupport(ctx));
 registerMenuHandler('trial', async (ctx) => claimTrial(ctx));
@@ -788,7 +796,7 @@ async function showProductSelector(ctx) {
   await ctx.reply(
     '🌍 لوکیشن موردنظرت رو انتخاب کن:',
     Markup.inlineKeyboard([
-      ...countries.map((country) => [Markup.button.callback(`${country.flag} ${country.name}`, `country_${country.code}`)]),
+      ...countries.map((country) => [primaryButton(`${country.flag} ${country.name}`, `country_${country.code}`)]),
       [backButton('🔙 بازگشت به منوی اصلی')],
     ]),
   );
@@ -827,7 +835,7 @@ bot.action(/^country_([A-Z]{2,8})$/, async (ctx) => {
 
   await ctx.reply(
     `🌍 کشور انتخاب‌شده: ${countryName}\n\n` + `⏳ مدت اشتراک را انتخاب کن:`,
-    Markup.inlineKeyboard([...durations.map((months) => [Markup.button.callback(`${months} ماهه`, `duration_${country}_${months}`)]), [backButton('🔙 بازگشت', 'show_products')]]),
+    Markup.inlineKeyboard([...durations.map((months) => [primaryButton(`${months} ماهه`, `duration_${country}_${months}`)]), [backButton('🔙 بازگشت', 'show_products')]]),
   );
 });
 
@@ -854,7 +862,7 @@ bot.action(/^duration_([A-Z]{2,8})_(\d+)$/, async (ctx) => {
 
   const availableProducts = getPurchasableProducts().filter((product) => product.country === country && Number(product.months) === months);
 
-  const buttons = availableProducts.map((product) => [Markup.button.callback(`${product.trafficLabel} | ${formatPrice(product.price)}`, `select_plan_${product.id}`)]);
+  const buttons = availableProducts.map((product) => [primaryButton(`${product.trafficLabel} | ${formatPrice(product.price)}`, `select_plan_${product.id}`)]);
 
   buttons.push([backButton('🔙 بازگشت به لوکیشن', 'show_products')]);
 
@@ -894,7 +902,7 @@ bot.action(/^select_plan_(\d+)$/, async (ctx) => {
       `💰 قیمت پایه (۱ کاربره): ${formatPrice(product.price)}\n\n` +
       `👥 تعداد کاربران مجاز هم‌زمان را انتخاب کن:`,
     Markup.inlineKeyboard([
-      ...USER_LIMIT_OPTIONS.map((option) => [Markup.button.callback(option.label, `limit_${option.value}`)]),
+      ...USER_LIMIT_OPTIONS.map((option) => [primaryButton(option.label, `limit_${option.value}`)]),
       [backButton('🔙 بازگشت به انتخاب حجم', `duration_${product.country}_${product.months}`)],
       [backButton('لغو خرید', 'cancel_purchase')],
     ]),
@@ -1056,7 +1064,7 @@ bot.on('text', async (ctx, next) => {
       delete ctx.session.support;
       return ctx.reply(
         'ارسال پیام از داخل ربات فعلاً فعال نیست. لطفاً مستقیم با پشتیبانی ارتباط بگیر.',
-        Markup.inlineKeyboard([[Markup.button.url('💬 پیام مستقیم به پشتیبانی', SUPPORT.directUrl)]]),
+        Markup.inlineKeyboard([[primaryUrlButton('💬 پیام مستقیم به پشتیبانی', SUPPORT.directUrl)]]),
       );
     }
 
@@ -1365,7 +1373,7 @@ bot.action(/^edit_order_(\d+)$/, async (ctx) => {
   await ctx.reply(
     `سفارش ${orderId} لغو شد و می‌توانی نسخهٔ جدید آن را بسازی.\n\n⏳ مدت اشتراک را انتخاب کن:`,
     Markup.inlineKeyboard([
-      ...durations.map((months) => [Markup.button.callback(`${months} ماهه`, `duration_${country.code}_${months}`)]),
+      ...durations.map((months) => [primaryButton(`${months} ماهه`, `duration_${country.code}_${months}`)]),
       [backButton('لغو خرید', 'cancel_purchase')],
     ]),
   );
@@ -1637,7 +1645,7 @@ async function startSupport(ctx) {
       `🆔 @vipanet\n\n` +
       `منتظر پیام‌هات هستیم ❤️\n\n` +
       `✍️ پیامت رو ارسال کن یا برای بازگشت، دکمه «❌ انصراف» رو بزن.`,
-    Markup.inlineKeyboard([[Markup.button.url('💬 ارتباط مستقیم با پشتیبانی', SUPPORT.directUrl)], [dangerButton('انصراف', 'support_cancel')]]),
+    Markup.inlineKeyboard([[primaryUrlButton('💬 ارتباط مستقیم با پشتیبانی', SUPPORT.directUrl)], [dangerButton('انصراف', 'support_cancel')]]),
   );
 }
 
