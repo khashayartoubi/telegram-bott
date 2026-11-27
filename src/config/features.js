@@ -55,8 +55,8 @@ const TRIAL_ACCOUNT = {
   // برای انتقال اکانت تست به آلمان فقط مقدار را به 'DE' تغییر بده.
   countryCode: 'NL',
   // 100 MiB (3x-ui totalGB is stored in bytes).
-  trafficGb: 100 / 1024,
-  trafficLabel: '۱۰۰ مگابایت',
+  trafficGb: 50 / 1024,
+  trafficLabel: '۵۰ مگابایت',
   durationDays: 1,
   limitIp: 1,
   usernamePrefix: 'trial',

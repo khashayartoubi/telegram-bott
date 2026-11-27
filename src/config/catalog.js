@@ -32,9 +32,9 @@ const PRICING = {
   pricePerGb: 7_000,
   pricePerMonth: 1_000,
   unlimitedByMonth: {
-    1: 300_000,
-    2: 399_000,
-    3: 499_000,
+    1: 400_000,
+    2: 759_000,
+    3: 1_499_000,
   },
 };
 
