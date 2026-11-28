@@ -12,19 +12,19 @@ const PLAN_DEFINITIONS = [
   { id: 1, months: 1, trafficGb: 10 },
   { id: 2, months: 1, trafficGb: 30 },
   { id: 3, months: 1, trafficGb: 50 },
-  { id: 4, months: 1, trafficGb: 0, unlimited: true },
+  // { id: 4, months: 1, trafficGb: 0, unlimited: true },
 
   // Two months
   { id: 5, months: 2, trafficGb: 50 },
   { id: 6, months: 2, trafficGb: 70 },
   { id: 7, months: 2, trafficGb: 100 },
-  { id: 8, months: 2, trafficGb: 0, unlimited: true },
+  // { id: 8, months: 2, trafficGb: 0, unlimited: true },
 
   // Three months
   { id: 9, months: 3, trafficGb: 100 },
   { id: 10, months: 3, trafficGb: 150 },
   { id: 11, months: 3, trafficGb: 200 },
-  { id: 12, months: 3, trafficGb: 0, unlimited: true },
+  // { id: 12, months: 3, trafficGb: 0, unlimited: true },
 ];
 
 // تمام قیمت‌ها اینجا متمرکز هستند.

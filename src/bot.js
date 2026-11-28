@@ -889,18 +889,26 @@ bot.action(/^duration_([A-Z]{2,8})_(\d+)$/, async (ctx) => {
   const country = ctx.match[1];
   const months = Number(ctx.match[2]);
 
-  const purchase = ctx.session.purchase;
-
-  if (!purchase || purchase.country !== country) {
-    return ctx.reply('مرحله خرید معتبر نیست. دوباره شروع کن.');
+  if (!isCountryEnabled(country)) {
+    return ctx.reply('سرویس فعلاً در دسترس نیست، بزودی این سرویس فعال می‌شود.');
   }
+
+  const availableProducts = getPurchasableProducts().filter((product) => product.country === country && Number(product.months) === months);
+  if (!availableProducts.length) {
+    return ctx.reply('این مدت اشتراک در حال حاضر در دسترس نیست.');
+  }
+
+  // Session حافظه‌ای است و با restart بات پاک می‌شود، اما callback دکمهٔ
+  // مدت خودش کشور و مدت را دارد؛ بنابراین مسیر خرید را دوباره می‌سازیم.
+  if (!ctx.session.purchase || ctx.session.purchase.country !== country) {
+    ctx.session.purchase = { country, step: 'duration' };
+  }
+  const purchase = ctx.session.purchase;
 
   purchase.months = months;
   purchase.step = 'traffic';
 
   const countryName = getPurchasableProducts().find((product) => product.country === country)?.countryName;
-
-  const availableProducts = getPurchasableProducts().filter((product) => product.country === country && Number(product.months) === months);
 
   const buttons = availableProducts.map((product) => [primaryButton(`${product.trafficLabel} | ${formatPrice(product.price)}`, `select_plan_${product.id}`)]);
 
