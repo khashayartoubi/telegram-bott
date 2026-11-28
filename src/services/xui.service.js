@@ -85,16 +85,17 @@ function buildSubscriptionUrl(subId) {
   }
 }
 
-function createClientRemark(countryCode, username) {
+function createClientRemark(countryCode) {
   const country = String(countryCode || 'VPN').toUpperCase();
-  const flags = {
-    NL: '🇳🇱',
-    DE: '🇩🇪',
+  const names = {
+    NL: 'VPANET-NL',
+    // DE is shown to customers as DU, per the product naming convention.
+    DE: 'VPANET-DU',
+    CA: 'VPANET-CA',
+    FR: 'VPANET-FR',
   };
 
-  // This title is used for the directly delivered VLESS link. The title in a
-  // panel-generated subscription is controlled by that inbound's Remark.
-  return `vpanet ${country}${flags[country] ? ` ${flags[country]}` : ''}`;
+  return names[country] || `VPANET-${country}`;
 }
 
 function isValidShadowsocks2022Key(value) {
@@ -114,15 +115,28 @@ function createShadowsocks2022Key() {
   return crypto.randomBytes(32).toString('base64');
 }
 
-function withRemark(vlessUrl, remark) {
+function withLinkRemark(link, remark) {
+  if (link.toLowerCase().startsWith('vmess://')) {
+    try {
+      const encoded = link.slice('vmess://'.length).trim();
+      const normalized = encoded.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(encoded.length / 4) * 4, '=');
+      const config = JSON.parse(Buffer.from(normalized, 'base64').toString('utf8'));
+
+      config.ps = remark;
+      return `vmess://${Buffer.from(JSON.stringify(config), 'utf8').toString('base64')}`;
+    } catch {
+      // Fall through to the original link if a panel uses a non-standard VMess format.
+      return link;
+    }
+  }
+
   try {
-    const url = new URL(vlessUrl);
+    const url = new URL(link);
     url.hash = remark;
     return url.toString();
   } catch {
-    // The panel has already returned a usable VLESS link. Preserve it if it
-    // uses a non-standard format rather than preventing delivery.
-    return vlessUrl;
+    // Preserve a usable panel-generated link if it uses a non-standard format.
+    return link;
   }
 }
 
@@ -262,7 +276,7 @@ function buildClient({ existing, email, subId, telegramId, durationDays, traffic
     subId: existing?.subId || subId,
     tgId: String(telegramId),
     // This is visible in 3x-ui and keeps client records easy to identify.
-    comment: createClientRemark(countryCode, email),
+    comment: createClientRemark(countryCode),
   };
 }
 
@@ -425,10 +439,10 @@ async function provisionClient(options) {
   if (!links.length) links = collectProtocolLinks(await getSubscriptionLinks(effectiveSubId));
 
   const protocolUrls = Object.fromEntries(
-    ['vless', 'vmess'].flatMap((protocol) => {
-      const scheme = `${protocol}://`;
+    ['vless', 'vmess', 'trojan', 'shadowsocks'].flatMap((protocol) => {
+      const scheme = protocol === 'shadowsocks' ? 'ss://' : `${protocol}://`;
       const link = links.find((item) => typeof item === 'string' && item.startsWith(scheme));
-      return link ? [[protocol, protocol === 'vless' ? withRemark(link, createClientRemark(options.countryCode, options.email)) : link]] : [];
+      return link ? [[protocol, withLinkRemark(link, createClientRemark(options.countryCode))]] : [];
     }),
   );
 
