@@ -97,6 +97,23 @@ function createClientRemark(countryCode, username) {
   return `vpanet ${country}${flags[country] ? ` ${flags[country]}` : ''}`;
 }
 
+function isValidShadowsocks2022Key(value) {
+  if (typeof value !== 'string' || !value) return false;
+
+  try {
+    const decoded = Buffer.from(value, 'base64');
+    // Canonical Base64 prevents UUIDs/ordinary strings from being accepted by
+    // Node's permissive decoder. Shadowsocks 2022 AES-256 requires 32 bytes.
+    return decoded.length === 32 && decoded.toString('base64') === value;
+  } catch {
+    return false;
+  }
+}
+
+function createShadowsocks2022Key() {
+  return crypto.randomBytes(32).toString('base64');
+}
+
 function withRemark(vlessUrl, remark) {
   try {
     const url = new URL(vlessUrl);
@@ -210,17 +227,12 @@ async function findClientByIdentifier(identifier) {
 
 async function validateInbounds(inboundIds) {
   const inbounds = await getInbounds();
-  const supportedProtocols = new Set(['vless', 'vmess', 'trojan', 'shadowsocks']);
 
   return inboundIds.map((inboundId) => {
     const inbound = inbounds.find((item) => Number(item.id) === Number(inboundId));
 
     if (!inbound) {
       throw new Error(`Inbound ${inboundId} was not found`);
-    }
-
-    if (!supportedProtocols.has(String(inbound.protocol).toLowerCase())) {
-      throw new Error(`Inbound ${inboundId} uses an unsupported protocol: ${inbound.protocol}`);
     }
 
     if (!inbound.enable) {
@@ -238,6 +250,9 @@ function buildClient({ existing, email, subId, telegramId, durationDays, traffic
 
   return {
     id: existing?.id || crypto.randomUUID(),
+    // SS2022 uses this as the user's PSK. Supplying the UUID here (or leaving
+    // the field absent on older 3x-ui releases) yields an invalid 24-byte key.
+    password: isValidShadowsocks2022Key(existing?.password) ? existing.password : createShadowsocks2022Key(),
     email,
     enable: true,
     flow: existing?.flow || '',
@@ -260,6 +275,7 @@ async function addClient(inboundIds, client) {
     body: JSON.stringify({
       client: {
         id: client.id,
+        password: client.password,
         email: client.email,
         subId: client.subId,
         flow: client.flow,
@@ -301,6 +317,7 @@ async function updateClient(inboundId, client) {
     },
     body: JSON.stringify({
       email: client.email,
+      password: client.password,
       totalGB: client.totalGB,
       expiryTime: client.expiryTime,
       limitIp: client.limitIp,
@@ -408,8 +425,8 @@ async function provisionClient(options) {
   if (!links.length) links = collectProtocolLinks(await getSubscriptionLinks(effectiveSubId));
 
   const protocolUrls = Object.fromEntries(
-    ['vless', 'vmess', 'trojan', 'shadowsocks'].flatMap((protocol) => {
-      const scheme = protocol === 'shadowsocks' ? 'ss://' : `${protocol}://`;
+    ['vless', 'vmess'].flatMap((protocol) => {
+      const scheme = `${protocol}://`;
       const link = links.find((item) => typeof item === 'string' && item.startsWith(scheme));
       return link ? [[protocol, protocol === 'vless' ? withRemark(link, createClientRemark(options.countryCode, options.email)) : link]] : [];
     }),
