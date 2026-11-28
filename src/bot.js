@@ -28,6 +28,7 @@ const {
   saveServiceProfile,
   getTrialAccount,
   saveTrialAccount,
+  sessionStore,
 } = require('./database/db');
 
 const { provisionClient, findClientByIdentifier } = require('./services/xui.service');
@@ -48,6 +49,7 @@ const bot = new Telegraf(BOT_TOKEN);
 bot.use(
   session({
     getSessionKey: (ctx) => ctx.from?.id?.toString(),
+    store: sessionStore,
   }),
 );
 

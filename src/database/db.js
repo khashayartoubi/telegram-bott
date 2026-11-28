@@ -14,6 +14,48 @@ db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 db.pragma("busy_timeout = 5000");
 
+// Telegraf's default store exists only in process memory. Store sessions in
+// SQLite so an in-progress purchase survives a bot or PM2 restart.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS bot_sessions (
+    session_key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
+const sessionStatements = {
+  get: db.prepare("SELECT value FROM bot_sessions WHERE session_key = ?"),
+  set: db.prepare(`
+    INSERT INTO bot_sessions (session_key, value, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(session_key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = CURRENT_TIMESTAMP
+  `),
+  delete: db.prepare("DELETE FROM bot_sessions WHERE session_key = ?"),
+};
+
+const sessionStore = {
+  get(key) {
+    const row = sessionStatements.get.get(String(key));
+    if (!row) return undefined;
+
+    try {
+      return JSON.parse(row.value);
+    } catch {
+      sessionStatements.delete.run(String(key));
+      return undefined;
+    }
+  },
+  set(key, value) {
+    sessionStatements.set.run(String(key), JSON.stringify(value));
+  },
+  delete(key) {
+    sessionStatements.delete.run(String(key));
+  },
+};
+
 // --------------------------------------------------
 // Orders table
 // --------------------------------------------------
@@ -656,6 +698,7 @@ function saveServiceProfile({ userId, username, subId, inboundId }) {
 }
 
 module.exports = {
+  sessionStore,
   createOrder,
   getOrder,
   getUserOrders,
