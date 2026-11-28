@@ -538,11 +538,12 @@ async function sendLink(chatId, title, url, copyButtonText) {
 }
 
 function getProtocolLinkDeliveries(chatId, protocolUrls = {}) {
+  // Direct delivery is intentionally limited to the two client formats we
+  // support. The subscription URL remains the complete panel subscription
+  // and can include every inbound attached to the client.
   const protocols = [
     ['vless', texts.delivery.vlessTitle, '📋 کپی لینک VLESS'],
     ['vmess', texts.delivery.vmessTitle, '📋 کپی لینک VMess'],
-    ['trojan', texts.delivery.trojanTitle, '📋 کپی لینک Trojan'],
-    ['shadowsocks', texts.delivery.shadowsocksTitle, '📋 کپی لینک Shadowsocks'],
   ];
 
   return protocols

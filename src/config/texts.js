@@ -14,7 +14,5 @@ module.exports = {
   delivery: {
     vlessTitle: '🔗 لینک VLESS (برای اتصال مستقیم):',
     vmessTitle: '🔗 لینک VMess (برای اتصال مستقیم):',
-    trojanTitle: '🔗 لینک Trojan (برای اتصال مستقیم):',
-    shadowsocksTitle: '🔗 لینک Shadowsocks (برای اتصال مستقیم):',
   },
 };
