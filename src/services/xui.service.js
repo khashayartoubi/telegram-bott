@@ -367,6 +367,29 @@ async function getSubscriptionLinks(subId) {
   return assertSuccess(data, 'Get subscription links') || [];
 }
 
+function collectProtocolLinks(value, links = []) {
+  if (typeof value === 'string') {
+    const parsed = parseJson(value);
+    if (parsed !== value) return collectProtocolLinks(parsed, links);
+
+    if (/^(vless|vmess|trojan|ss):\/\//i.test(value.trim())) {
+      links.push(value.trim());
+    }
+    return links;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectProtocolLinks(item, links));
+    return links;
+  }
+
+  if (value && typeof value === 'object') {
+    Object.values(value).forEach((item) => collectProtocolLinks(item, links));
+  }
+
+  return links;
+}
+
 async function provisionClient(options) {
   if (!options.email || !options.inboundId || !options.durationDays) {
     throw new Error('Missing required client provisioning options');
@@ -381,8 +404,8 @@ async function provisionClient(options) {
 
   const effectiveSubId = result.client.subId || subId;
 
-  let links = await getClientLinks(options.email);
-  if (!Array.isArray(links) || !links.length) links = await getSubscriptionLinks(effectiveSubId);
+  let links = collectProtocolLinks(await getClientLinks(options.email));
+  if (!links.length) links = collectProtocolLinks(await getSubscriptionLinks(effectiveSubId));
 
   const protocolUrls = Object.fromEntries(
     ['vless', 'vmess', 'trojan', 'shadowsocks'].flatMap((protocol) => {
@@ -393,10 +416,6 @@ async function provisionClient(options) {
   );
 
   const vlessUrl = protocolUrls.vless;
-
-  if (!vlessUrl) {
-    throw new Error('Client was saved, but the VLESS link could not be retrieved.');
-  }
 
   return {
     email: options.email,
