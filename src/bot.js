@@ -5,7 +5,7 @@ const QRCode = require('qrcode');
 const { Telegraf, Markup, session } = require('telegraf');
 
 const products = require('./config/catalog');
-const { USER_LIMIT_OPTIONS, COUNTRIES, isCountryEnabled } = require('./config/catalog');
+const { USER_LIMIT_OPTIONS, COUNTRIES, isCountryEnabled, isCountryVisible } = require('./config/catalog');
 const texts = require('./config/texts');
 const { createUsername, isValidUsername } = require('./utils/usernames');
 const { START_MENU, TRIAL_ACCOUNT, DISCOUNT_CODES, CONNECTION_TUTORIALS, REQUIRED_CHANNEL, SUPPORT, MAX_SERVICE_PROFILES } = require('./config/features');
@@ -129,6 +129,15 @@ function getCountryName(countryCode) {
 
 function getPurchasableProducts() {
   return products.filter((product) => isCountryEnabled(product.country));
+}
+
+function getVisibleProducts() {
+  return products.filter((product) => isCountryVisible(product.country));
+}
+
+function getInboundIds(source) {
+  const configured = Object.values(source?.inboundIds || {});
+  return [...new Set([source?.inboundId, ...configured].map(Number).filter((id) => Number.isInteger(id) && id > 0))];
 }
 
 function getUserLimitLabel(limitIp) {
@@ -518,11 +527,25 @@ async function sendLink(chatId, title, url, copyButtonText) {
     throw new Error(`${title} is empty or invalid`);
   }
 
-  // The text remains selectable. The Telegram `copy_text` button additionally
-  // copies with one tap, without the user needing to long-press the link.
-  await bot.telegram.sendMessage(chatId, `${title}\n${url}`, {
-    reply_markup: Markup.inlineKeyboard([[{ text: `🔵 ${copyButtonText}`, copy_text: { text: url } }]]).reply_markup,
-  });
+  // Telegram permits only 1–256 characters in a CopyTextButton. VLESS links
+  // may be longer, but remain selectable as ordinary message text.
+  const copyButton = Array.from(url).length <= 256 ? [{ text: `🔵 ${copyButtonText}`, copy_text: { text: url } }] : null;
+  const extra = copyButton ? { reply_markup: Markup.inlineKeyboard([copyButton]).reply_markup } : {};
+
+  await bot.telegram.sendMessage(chatId, `${title}\n${url}`, extra);
+}
+
+function getProtocolLinkDeliveries(chatId, protocolUrls = {}) {
+  const protocols = [
+    ['vless', texts.delivery.vlessTitle, '📋 کپی لینک VLESS'],
+    ['vmess', texts.delivery.vmessTitle, '📋 کپی لینک VMess'],
+    ['trojan', texts.delivery.trojanTitle, '📋 کپی لینک Trojan'],
+    ['shadowsocks', texts.delivery.shadowsocksTitle, '📋 کپی لینک Shadowsocks'],
+  ];
+
+  return protocols
+    .filter(([protocol]) => protocolUrls[protocol])
+    .map(([protocol, title, copyButtonText]) => sendLink(chatId, title, protocolUrls[protocol], copyButtonText));
 }
 
 async function sendSubscriptionAddLink(chatId, subscriptionUrl) {
@@ -530,12 +553,13 @@ async function sendSubscriptionAddLink(chatId, subscriptionUrl) {
     throw new Error('Subscription URL is empty or invalid');
   }
 
+  const copyButton = Array.from(subscriptionUrl).length <= 256 ? [{ text: '🔵 📋 کپی لینک Subscription info', copy_text: { text: subscriptionUrl } }] : null;
+  const extra = copyButton ? { reply_markup: Markup.inlineKeyboard([copyButton]).reply_markup } : {};
+
   await bot.telegram.sendMessage(
     chatId,
     `🔗 لینک Subscription info\n` + `این همان لینک SUB پنل است؛ آن را در V2Box اضافه کن تا حجم و مدت باقی‌مانده نمایش داده شود.\n\n` + `${subscriptionUrl}`,
-    {
-      reply_markup: Markup.inlineKeyboard([[{ text: '🔵 📋 کپی لینک Subscription info', copy_text: { text: subscriptionUrl } }]]).reply_markup,
-    },
+    extra,
   );
 
   const qrCode = await QRCode.toBuffer(subscriptionUrl, {
@@ -607,6 +631,7 @@ async function createAndDeliverService(orderId, adminCtx) {
       email: order.xui_email,
       subId,
       inboundId,
+      inboundIds: getInboundIds(product),
       telegramId: Number(order.telegram_user_id),
       durationDays,
       trafficGb,
@@ -642,15 +667,16 @@ async function createAndDeliverService(orderId, adminCtx) {
       `شناسه اتصال و لینک قبلی حفظ شده‌اند.\n\n` +
       `برای نمایش حجم در V2Box، لینک اشتراک را اضافه یا QR آن را اسکن کن.`;
 
-    try {
-      await bot.telegram.sendMessage(order.telegram_user_id, userMessage);
+    const deliveryResults = await Promise.allSettled([
+      bot.telegram.sendMessage(order.telegram_user_id, userMessage),
+      ...getProtocolLinkDeliveries(order.telegram_user_id, result.protocolUrls),
+      sendSubscriptionAddLink(order.telegram_user_id, result.subscriptionUrl),
+    ]);
+    const deliveryErrors = deliveryResults.filter((item) => item.status === 'rejected').map((item) => item.reason);
 
-      await sendLink(order.telegram_user_id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
-      await sendSubscriptionAddLink(order.telegram_user_id, result.subscriptionUrl);
-    } catch (deliveryError) {
-      console.error('Service created, but Telegram delivery failed:', deliveryError);
-
-      await adminCtx.reply(`سرویس سفارش ${orderId} ساخته شد، اما ارسال پیام به کاربر شکست خورد.\n` + `خطا: ${deliveryError.message}`);
+    if (deliveryErrors.length) {
+      console.error('Service created, but part of Telegram delivery failed:', deliveryErrors);
+      await adminCtx.reply(`سرویس سفارش ${orderId} ساخته شد، اما بخشی از پیام‌ها به کاربر نرسید.\n` + `خطا: ${deliveryErrors[0].message}`);
     }
 
     await adminCtx.reply(
@@ -756,6 +782,7 @@ async function claimTrial(ctx) {
     const result = await provisionClient({
       email: username,
       inboundId: country.inboundId,
+      inboundIds: getInboundIds(country),
       telegramId: Number(ctx.from.id),
       durationDays: TRIAL_ACCOUNT.durationDays,
       trafficGb: TRIAL_ACCOUNT.trafficGb,
@@ -767,7 +794,7 @@ async function claimTrial(ctx) {
     saveTrialAccount({ userId: ctx.from.id, username: result.email, subId: result.subId, inboundId: result.inboundId, campaignId: TRIAL_ACCOUNT.campaignId });
 
     await ctx.reply(`🎁 اکانت تست فعال شد.\n\n📦 حجم: ${TRIAL_ACCOUNT.trafficLabel}\n⏳ اعتبار: ${TRIAL_ACCOUNT.durationDays} روز\n👤 نام کاربری: ${result.email}`);
-    await sendLink(ctx.from.id, texts.delivery.vlessTitle, result.vlessUrl, '📋 کپی خودکار لینک VLESS');
+    await Promise.all(getProtocolLinkDeliveries(ctx.from.id, result.protocolUrls));
     await sendSubscriptionAddLink(ctx.from.id, result.subscriptionUrl);
     await ctx.reply('برای مشاهدهٔ حجم و زمان باقی‌مانده لینک اشتراک را اضافه کن.', mainMenu());
   } catch (error) {
@@ -790,7 +817,7 @@ async function showProductSelector(ctx) {
 
   const countries = [
     ...new Map(
-      getPurchasableProducts().map((product) => [
+      getVisibleProducts().map((product) => [
         product.country,
         {
           code: product.country,
@@ -821,8 +848,12 @@ bot.action(/^country_([A-Z]{2,8})$/, async (ctx) => {
 
   const country = ctx.match[1];
 
+  if (!isCountryVisible(country)) {
+    return ctx.reply('این لوکیشن در دسترس نیست.');
+  }
+
   if (!isCountryEnabled(country)) {
-    return ctx.reply('این لوکیشن فعلاً در دسترس نیست.');
+    return ctx.reply('سرویس فعلاً در دسترس نیست، بزودی این سرویس فعال می‌شود.');
   }
 
   ctx.session.purchase = {

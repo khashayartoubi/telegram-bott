@@ -38,24 +38,65 @@ const PRICING = {
   },
 };
 
+// مقدارهای قدیمی تک-ID و آرایهٔ JSON مانند `[2,3,4]` هر دو پذیرفته می‌شوند.
+// ترتیب آرایه مهم است: اولین ID باید inbound اصلی VLESS باشد.
+function parseInboundIds(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+
+  let values;
+  try {
+    values = JSON.parse(raw);
+  } catch {
+    values = raw.split(',');
+  }
+
+  if (!Array.isArray(values)) values = [values];
+  return [...new Set(values.map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+}
+
+const DE_INBOUND_IDS = parseInboundIds(process.env.XUI_DE_INBOUND_ID);
+const NL_INBOUND_IDS = parseInboundIds(process.env.XUI_NL_INBOUND_ID);
+const CA_INBOUND_IDS = parseInboundIds(process.env.XUI_CA_INBOUND_ID);
+const FR_INBOUND_IDS = parseInboundIds(process.env.XUI_FR_INBOUND_ID);
+
 const COUNTRIES = [
   {
     code: "DE",
     name: "آلمان",
     flag: "🇩🇪",
-    inboundId: Number(process.env.XUI_DE_INBOUND_ID),
-    // با false کردن این مقدار، تمام پلن‌های آلمان از خرید پنهان می‌شوند.
+    inboundId: DE_INBOUND_IDS[0],
+    inboundIds: DE_INBOUND_IDS,
+    // show نمایش کشور و enabled امکان خرید آن را کنترل می‌کند.
+    show: true,
     enabled: false,
   },
-  // برای افزودن کشور جدید، یک مورد مشابه این اضافه کنید:
-  // { code: "FR", name: "فرانسه", flag: "🇫🇷", inboundId: Number(process.env.XUI_FR_INBOUND_ID) },
   {
     code: "NL",
     name: "هلند",
     flag: "🇳🇱",
-    inboundId: Number(process.env.XUI_NL_INBOUND_ID),
-    // با false کردن این مقدار، تمام پلن‌های هلند از خرید پنهان می‌شوند.
+    inboundId: NL_INBOUND_IDS[0],
+    inboundIds: NL_INBOUND_IDS,
+    show: true,
     enabled: true,
+  },
+  {
+    code: "CA",
+    name: "کانادا",
+    flag: "🇨🇦",
+    inboundId: CA_INBOUND_IDS[0],
+    inboundIds: CA_INBOUND_IDS,
+    show: true,
+    enabled: false,
+  },
+  {
+    code: "FR",
+    name: "فرانسه",
+    flag: "🇫🇷",
+    inboundId: FR_INBOUND_IDS[0],
+    inboundIds: FR_INBOUND_IDS,
+    show: true,
+    enabled: false,
   },
 ];
 
@@ -92,6 +133,12 @@ const products = COUNTRIES.flatMap((country, countryIndex) =>
       countryName: country.name,
 
       inboundId: country.inboundId,
+
+      inboundIds: country.inboundIds,
+
+      show: country.show === true,
+
+      enabled: country.enabled !== false,
 
       months: plan.months,
 
@@ -131,4 +178,8 @@ module.exports.calculatePrice = calculatePrice;
 module.exports.isCountryEnabled = (countryCode) =>
   COUNTRIES.some(
     (country) => country.code === countryCode && country.enabled !== false,
+  );
+module.exports.isCountryVisible = (countryCode) =>
+  COUNTRIES.some(
+    (country) => country.code === countryCode && country.show === true,
   );

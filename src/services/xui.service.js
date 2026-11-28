@@ -208,24 +208,27 @@ async function findClientByIdentifier(identifier) {
   return null;
 }
 
-async function validateInbound(inboundId) {
+async function validateInbounds(inboundIds) {
   const inbounds = await getInbounds();
+  const supportedProtocols = new Set(['vless', 'vmess', 'trojan', 'shadowsocks']);
 
-  const inbound = inbounds.find((item) => Number(item.id) === Number(inboundId));
+  return inboundIds.map((inboundId) => {
+    const inbound = inbounds.find((item) => Number(item.id) === Number(inboundId));
 
-  if (!inbound) {
-    throw new Error(`Inbound ${inboundId} was not found`);
-  }
+    if (!inbound) {
+      throw new Error(`Inbound ${inboundId} was not found`);
+    }
 
-  if (String(inbound.protocol).toLowerCase() !== 'vless') {
-    throw new Error(`Inbound ${inboundId} is not a VLESS inbound`);
-  }
+    if (!supportedProtocols.has(String(inbound.protocol).toLowerCase())) {
+      throw new Error(`Inbound ${inboundId} uses an unsupported protocol: ${inbound.protocol}`);
+    }
 
-  if (!inbound.enable) {
-    throw new Error(`Inbound ${inboundId} is disabled`);
-  }
+    if (!inbound.enable) {
+      throw new Error(`Inbound ${inboundId} is disabled`);
+    }
 
-  return inbound;
+    return inbound;
+  });
 }
 
 function buildClient({ existing, email, subId, telegramId, durationDays, trafficGb, limitIp, countryCode }) {
@@ -248,7 +251,7 @@ function buildClient({ existing, email, subId, telegramId, durationDays, traffic
   };
 }
 
-async function addClient(inboundId, client) {
+async function addClient(inboundIds, client) {
   const data = await request('panel/api/clients/add', {
     method: 'POST',
     headers: {
@@ -267,13 +270,27 @@ async function addClient(inboundId, client) {
         enable: client.enable,
         comment: client.comment,
       },
-      inboundIds: [Number(inboundId)],
+      inboundIds,
     }),
   });
 
   assertSuccess(data, 'Add client');
 
   return client;
+}
+
+async function attachClient(email, inboundIds) {
+  if (!inboundIds.length) return;
+
+  const data = await request(`panel/api/clients/${encodeURIComponent(email)}/attach`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ inboundIds }),
+  });
+
+  assertSuccess(data, 'Attach client to inbounds');
 }
 
 async function updateClient(inboundId, client) {
@@ -299,14 +316,15 @@ async function updateClient(inboundId, client) {
 }
 
 async function createOrUpdateClient(options) {
-  const { email, subId, inboundId, telegramId, durationDays, trafficGb = 0, limitIp = 0, countryCode } = options;
+  const { email, subId, inboundId, inboundIds = [], telegramId, durationDays, trafficGb = 0, limitIp = 0, countryCode } = options;
 
   const existing = await findClient(email);
 
   // If the client exists, preserve its original inbound.
   const targetInboundId = existing ? Number(existing.inboundId) : Number(inboundId);
+  const targetInboundIds = [...new Set([targetInboundId, ...inboundIds.map(Number)].filter((id) => Number.isInteger(id) && id > 0))];
 
-  await validateInbound(targetInboundId);
+  await validateInbounds(targetInboundIds);
 
   const client = buildClient({
     existing,
@@ -321,13 +339,15 @@ async function createOrUpdateClient(options) {
 
   if (existing) {
     await updateClient(targetInboundId, client);
+    await attachClient(email, targetInboundIds.filter((id) => id !== targetInboundId));
   } else {
-    await addClient(targetInboundId, client);
+    await addClient(targetInboundIds, client);
   }
 
   return {
     client,
     inboundId: targetInboundId,
+    inboundIds: targetInboundIds,
     isExisting: Boolean(existing),
   };
 }
@@ -361,15 +381,18 @@ async function provisionClient(options) {
 
   const effectiveSubId = result.client.subId || subId;
 
-  const links = await getClientLinks(options.email);
+  let links = await getClientLinks(options.email);
+  if (!Array.isArray(links) || !links.length) links = await getSubscriptionLinks(effectiveSubId);
 
-  let vlessUrl = Array.isArray(links) ? links.find((link) => typeof link === 'string' && link.startsWith('vless://')) : null;
+  const protocolUrls = Object.fromEntries(
+    ['vless', 'vmess', 'trojan', 'shadowsocks'].flatMap((protocol) => {
+      const scheme = protocol === 'shadowsocks' ? 'ss://' : `${protocol}://`;
+      const link = links.find((item) => typeof item === 'string' && item.startsWith(scheme));
+      return link ? [[protocol, protocol === 'vless' ? withRemark(link, createClientRemark(options.countryCode, options.email)) : link]] : [];
+    }),
+  );
 
-  if (!vlessUrl) {
-    const subscriptionLinks = await getSubscriptionLinks(effectiveSubId);
-
-    vlessUrl = Array.isArray(subscriptionLinks) ? subscriptionLinks.find((link) => typeof link === 'string' && link.startsWith('vless://')) : null;
-  }
+  const vlessUrl = protocolUrls.vless;
 
   if (!vlessUrl) {
     throw new Error('Client was saved, but the VLESS link could not be retrieved.');
@@ -380,7 +403,9 @@ async function provisionClient(options) {
     uuid: result.client.id,
     subId: effectiveSubId,
     inboundId: result.inboundId,
-    vlessUrl: withRemark(vlessUrl, createClientRemark(options.countryCode, options.email)),
+    inboundIds: result.inboundIds,
+    vlessUrl,
+    protocolUrls,
     subscriptionUrl: buildSubscriptionUrl(effectiveSubId),
     expiryTime: result.client.expiryTime,
     updatedExistingClient: result.isExisting,
